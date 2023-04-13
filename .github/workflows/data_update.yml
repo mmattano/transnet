@@ -1,0 +1,19 @@
+# This workflow will trigger the data generation monthly
+# At a later time point it will trigger new releases
+
+name: Update Data Monthly
+on:
+  schedule:
+    - cron: '0 0 1 * *' # Runs on the first day of every month at midnight
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Repository
+        uses: actions/checkout@v2
+      - name: Update Data
+        run: |
+          # Add commands to update data here
+          git add .
+          git commit -m "Update data"
+          git push
