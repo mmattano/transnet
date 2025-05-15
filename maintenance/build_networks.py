@@ -1,16 +1,20 @@
-"""
-Build pre-made networks for common model organisms.
-This script is intended to be run periodically via GitHub Actions to maintain
-up-to-date network databases for common model organisms.
+"""Fix for the import error in build_networks.py.
+
+This script adds the parent directory to the Python path before importing transnet modules.
 """
 
 import os
+import sys
 import argparse
 import logging
 import traceback
 from datetime import datetime
 import pandas as pd
 
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Now we can import from transnet
 from transnet.biology.transnet import Transnet
 from transnet.biology.layers import Pathways, Reactions, Proteome, Metabolome, Transcriptome
 

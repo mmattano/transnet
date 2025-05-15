@@ -1,24 +1,19 @@
-"""
-Demo script to showcase how to build and analyze a network using transnet.
-This script builds a small network for the specified organism and demonstrates
-basic analysis functionality.
+"""Fix for the import error in demo_network.py.
+
+This script adds the parent directory to the Python path before importing transnet modules.
 """
 
 import os
-import argparse
+import sys
 import logging
-import matplotlib.pyplot as plt
-from datetime import datetime
+from pathlib import Path
 
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Now we can import from transnet
 from transnet.biology.transnet import Transnet
-from transnet.biology.layers import Pathways, Reactions, Proteome, Metabolome, Transcriptome
-from transnet.analysis.network_analysis import (
-    compute_network_statistics, 
-    identify_hubs,
-    compute_centrality_measures,
-    detect_communities,
-    plot_network
-)
+from transnet.biology.layers import Pathways, Proteome, Metabolome
 
 # Configure logging
 logging.basicConfig(
@@ -50,6 +45,10 @@ ORGANISM_CONFIG = {
         "ensembl_org": "escherichia_coli_str_k_12_substr_mg1655"
     }
 }
+
+import argparse
+import matplotlib.pyplot as plt
+import networkx as nx
 
 def build_small_demo_network(organism):
     """
@@ -134,6 +133,8 @@ def analyze_network(transnet):
     
     # Basic statistics
     logger.info("Computing network statistics")
+    from transnet.analysis.network_analysis import compute_network_statistics, identify_hubs, compute_centrality_measures
+    
     stats = compute_network_statistics(G)
     print("\nNetwork Statistics:")
     for key, value in stats.items():
@@ -156,6 +157,7 @@ def analyze_network(transnet):
     # Community detection
     logger.info("Detecting communities")
     try:
+        from transnet.analysis.network_analysis import detect_communities
         communities = detect_communities(G, method='louvain')
         community_sizes = {}
         for node, community_id in communities.items():
@@ -173,13 +175,40 @@ def analyze_network(transnet):
     # Network visualization
     logger.info("Creating network visualization")
     try:
-        logger.info("Plotting network")
-        plt.figure(figsize=(10, 8))
-        plot_network(
-            G, 
-            title=f"{transnet.name} Visualization",
-            layout='spring'
-        )
+        try:
+            from transnet.visualization.network_vis import plot_network_basic
+            logger.info("Plotting network using TransNet visualization module")
+            plt.figure(figsize=(10, 8))
+            plot_network_basic(
+                G, 
+                title=f"{transnet.name} Visualization",
+                layout='spring'
+            )
+        except ImportError:
+            logger.info("TransNet visualization module not found, using basic NetworkX visualization")
+            plt.figure(figsize=(10, 8))
+            pos = nx.spring_layout(G)
+            
+            # Color nodes by layer
+            node_colors = []
+            for node in G.nodes():
+                layer = G.nodes[node].get('layer', 'Unknown')
+                if layer == 'Proteome':
+                    node_colors.append('orange')
+                elif layer == 'Metabolome':
+                    node_colors.append('green')
+                elif layer == 'Pathways':
+                    node_colors.append('purple')
+                else:
+                    node_colors.append('gray')
+            
+            nx.draw(G, pos, 
+                    node_color=node_colors,
+                    with_labels=True, 
+                    font_size=8,
+                    node_size=100,
+                    alpha=0.7)
+            plt.title(f"{transnet.name} Visualization")
         
         # Save the plot
         output_dir = "output"
