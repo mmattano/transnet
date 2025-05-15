@@ -35,7 +35,7 @@ def chemical_info_converter(input_ids):
         pubchem_ids: PubChem identifiers
     """
 
-    MAX_SIMULTANEOUS_REQUESTS = 1000
+    MAX_SIMULTANEOUS_REQUESTS = 100
 
     chebi_ids = []
     smiles = []
@@ -45,7 +45,7 @@ def chemical_info_converter(input_ids):
 
     for i in range(0, len(input_ids), MAX_SIMULTANEOUS_REQUESTS):
         start = i
-        end = i + 1000
+        end = i + MAX_SIMULTANEOUS_REQUESTS
         if end > len(input_ids):
             end = len(input_ids)
         params = {

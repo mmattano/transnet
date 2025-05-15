@@ -57,7 +57,10 @@ def ensembl_get_transcripts(
     return transcript_df
 
 
-def ensembl_expander(transcript_df):
+def ensembl_expander(
+        transcript_df,
+        search_by="ensembl_transcript_id",
+        ):
     """Expand transcript dataframe with gene names and descriptions.
 
     Parameters
@@ -73,12 +76,12 @@ def ensembl_expander(transcript_df):
     transcript_df = transcript_df.copy(deep=True)
 
     # Get gene names
-    gene_ids_list = transcript_df["ensembl_transcript_id"].to_list()
+    gene_ids_list = transcript_df[search_by].to_list()
     mg = mygene.MyGeneInfo()
     # Query gene names using mygene
     ginfo = mg.querymany(
         gene_ids_list,
-        scopes="ensembltranscript",
+        scopes=["ensembltranscript", "ensemblgene"],
         returnall=True,
         fields=["query", "name", "symbol", "entrezgene", "uniprot"],
     )

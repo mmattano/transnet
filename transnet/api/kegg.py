@@ -441,6 +441,8 @@ def kegg_create_reaction_table(print_max_repeats_needed=False):
                 if counter > max_repeats_needed:
                     max_repeats_needed = counter
                 time.sleep(0.1)
+        if enzyme is not None:
+            enzyme = enzyme.split('        ')
         eq_parts = equation.split(" <=> ")
         temp_substrates = eq_parts[0].split(" + ")
         stoichiometry_substrate = []

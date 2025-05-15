@@ -4,7 +4,10 @@
 # well curated, at least not for mouse
 
 from zeep import Client
+from zeep.helpers import serialize_object
+from zeep.exceptions import TransportError
 import hashlib
+import time
 
 
 class BRENDA_api:
@@ -40,51 +43,3 @@ class BRENDA_api:
     def intialize_client(self):
         wsdl = "https://www.brenda-enzymes.org/soap/brenda_zeep.wsdl"
         self.client = Client(wsdl)
-
-    def get_substrates(self, ec_number: str, organism: str = "") -> list:
-        """
-        Get a list of substrates for a given EC number
-        """
-        substrates = []
-        parameters = (
-            self.email,
-            self.password,
-            f"ecNumber*{ec_number}",
-            f"organism*{organism}",
-            "naturalSubstrate*",
-            "naturalReactionPartners*",
-            "ligandStructureId*",
-        )
-        resultString = self.client.service.getNaturalSubstrate(*parameters)
-        for entry in resultString:
-            [
-                substrates.append(entry)
-                for entry in entry.naturalSubstrate.split(" + ")
-                if entry not in ["more", "?"]
-            ]
-        substrates = list(set(substrates))
-        return substrates
-
-    def get_products(self, ec_number: str, organism: str = "") -> list:
-        """
-        Get a list of products for a given EC number
-        """
-        products = []
-        parameters = (
-            self.email,
-            self.password,
-            f"ecNumber*{ec_number}",
-            f"organism*{organism}",
-            "naturalProduct*",
-            "naturalReactionPartners*",
-            "ligandStructureId*",
-        )
-        resultString = self.client.service.getNaturalProduct(*parameters)
-        for entry in resultString:
-            [
-                products.append(entry)
-                for entry in entry.naturalProduct.split(" + ")
-                if entry not in ["more", "?"]
-            ]
-        products = list(set(products))
-        return products

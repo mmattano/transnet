@@ -9,49 +9,54 @@ __all__ = [
     "Metabolome",
 ]
 
-from transnet.api.kegg import *
-from transnet.api.uniprot import *
-from transnet.api.brenda import *
-from transnet.api.string import *
-from transnet.api.ensembl import *
-from transnet.api.chip_atlas import *
-from transnet.api.chem_info import *
-from transnet.biology.elements import *
+from transnet.api.kegg import kegg_create_reaction_table, kegg_list_pathways, kegg_link_pathway, kegg_link_ec, kegg_list_pathways, kegg_list_compounds, kegg_to_chebi, kegg_list_genes, kegg_conv_ncbi_idtable, kegg_ec_to_cpds, chebi_to_kegg
+from transnet.api.uniprot import uniprot_list_proteins, uniprot_add_entrez_id
+from transnet.api.brenda import BRENDA_api
+from transnet.api.string import string_map_identifiers, string_get_interactions, translate_string_dict
+from transnet.api.ensembl import ensembl_download_release, ensembl_get_transcripts, ensembl_expander
+from transnet.api.chip_atlas import get_ChIP_data, get_ChIP_exps
+from transnet.api.chem_info import chemical_info_converter
+from transnet.biology.elements import Reaction, Pathway, Metabolite, Gene, Protein
 import pandas as pd
+from zeep import Client
+from zeep.helpers import serialize_object
+from zeep.exceptions import TransportError
+import hashlib
+import time
 
 
 class Reactions:
     """
     Reactions
     """
-    
+
     def __init__(
         self,
     ):
         self.reactions = []
-    
+
     def __repr__(self):
         return f"<Reactions: {len(self.reactions)} reactions in total>"
-    
+
     def populate(
             self,
             from_api: bool = True,
-            df = None,
+            df=None,
             ):
         if from_api:
             print("-- Populate reactions from API")
             reaction_table = kegg_create_reaction_table()
             for _, row in reaction_table.iterrows():
                 new_reaction = Reaction(
-                    id = row['reaction'],
-                    name = row['name'],
-                    equation = row['equation'],
-                    definition = row['definition'],
-                    enzyme = row['enzyme'],
-                    substrates = row['substrates'],
-                    products = row['products'],
-                    stoichiometry_substrates = row['stoichiometry_substrates'],
-                    stoichiometry_products = row['stoichiometry_products'],
+                    id=row['reaction'],
+                    name=row['name'],
+                    equation=row['equation'],
+                    definition=row['definition'],
+                    enzyme=row['enzyme'],
+                    substrates=row['substrates'],
+                    products=row['products'],
+                    stoichiometry_substrates=row['stoichiometry_substrates'],
+                    stoichiometry_products=row['stoichiometry_products'],
                 )
                 self.reactions.append(new_reaction)
             print("-- Populate reactions: done")
@@ -60,15 +65,15 @@ class Reactions:
             reaction_table = df
             for _, row in reaction_table.iterrows():
                 new_reaction = Reaction(
-                    id = row['reaction'],
-                    name = row['name'],
-                    equation = row['equation'],
-                    definition = row['definition'],
-                    enzyme = row['enzyme'],
-                    substrates = row['substrates'],
-                    products = row['products'],
-                    stoichiometry_substrates = row['stoichiometry_substrates'],
-                    stoichiometry_products = row['stoichiometry_products'],
+                    id=row['reaction'],
+                    name=row['name'],
+                    equation=row['equation'],
+                    definition=row['definition'],
+                    enzyme=row['enzyme'],
+                    substrates=row['substrates'],
+                    products=row['products'],
+                    stoichiometry_substrates=row['stoichiometry_substrates'],
+                    stoichiometry_products=row['stoichiometry_products'],
                 )
                 self.reactions.append(new_reaction)
             print("-- Populate reactions: done")
@@ -93,9 +98,9 @@ class Pathways:
         print("-- Populate pathways from API")
         for _, row in kegg_list_pathways(self.kegg_organism).iterrows():
             new_pathway = Pathway(
-                id = row[0],
-                name = row[1],
-                kegg_organism = self.kegg_organism,
+                id=row[0],
+                name=row[1],
+                kegg_organism=self.kegg_organism,
             )
             self.pathways.append(new_pathway)
         print("-- Populate pathways: done")
@@ -159,14 +164,14 @@ class Metabolome():
     """
 
     def __init__(self):
-        self.metabolites = list
+        self.metabolites = []
         self.input_id_type = None
         self.input_ids = []
         self.input_data = None
 
     def __repr__(self):
         return f"<Metabolome, {len(self.metabolites)} metabolites in total>"
-    
+
     def add_experimental_data(
         self,
         input_data: pd.DataFrame = None,
@@ -191,16 +196,14 @@ class Metabolome():
     def populate(
         self,
         metabolite_column_name: str = None,
-        input_data_value_column_name: str = None,
-        input_data_p_value_column_name: str = None,
     ):
-        print("-- Populate metabolome, currently only works if you provide input data")
+        print("-- Populate metabolome")
         self.metabolites = []
         # Currently only works if you provide input data
         if self.input_id_type == "kegg":
             kegg_compounds_df = kegg_list_compounds()
             kegg_compounds_df = kegg_compounds_df[
-                kegg_compounds_df["compound_id"].isin(self.input_ids)
+                kegg_compounds_df["kegg_compounds"].isin(self.input_ids)
             ]
             kegg_converted = kegg_to_chebi(kegg_compounds_df.kegg_compounds)
             converted_ids = chemical_info_converter(
@@ -236,7 +239,7 @@ class Metabolome():
             #    how="inner")
             compound_id_table = converted_ids
             compound_id_table['kegg_compounds'] = chebi_kegg_conversion.kegg_compounds
-            compound_id_table['kegg_names'] = kegg_names
+            compound_id_table['names'] = kegg_names
             if self.input_id_type == "chebi":
                 input_id_column = 'chebi_ids'            
             elif self.input_id_type == "pubchem":
@@ -247,26 +250,41 @@ class Metabolome():
                 input_id_column = 'inchikeys'
             elif self.input_id_type == "smile":
                 input_id_column = 'smiles'
+        else:
+            kegg_compounds_df = kegg_list_compounds()
+            kegg_converted = kegg_to_chebi(kegg_compounds_df.kegg_compounds)
+            converted_ids = chemical_info_converter(
+                kegg_converted.chebi_compounds.to_list()
+                )
+            converted_ids.dropna(how='all', inplace=True)
+            compound_id_table = pd.merge(
+                pd.merge(
+                kegg_compounds_df, kegg_converted, on="kegg_compounds"
+                ),
+                converted_ids, 
+                left_on="chebi_compounds", right_on="chebi_ids",
+                how="outer")
         # create metabolites
         for _, row in compound_id_table.iterrows():
             try:
+                if self.input_id_type == "kegg":
+                    data = self.input_data[
+                        self.input_data[metabolite_column_name] == row[input_id_column]
+                        ]
+                else:
+                    data = None
                 new_metabolite = Metabolite(
                     pubchem_id = row['pubchem_ids'],
-                    kegg_name = row['kegg_names'],
+                    kegg_name = row['name'],
                     kegg_compound_id = row['kegg_compounds'],
                     inchi = row['inchi'],
                     inchikey = row['inchikeys'],
                     chebi_id = row['chebi_ids'],
                     smile = row['smiles'],
-                    fc = self.input_data[
-                        self.input_data[metabolite_column_name] == row[input_id_column]
-                    ][input_data_value_column_name].to_list()[0],
-                    adj_p_value = self.input_data[
-                        self.input_data[metabolite_column_name] == row[input_id_column]
-                    ][input_data_p_value_column_name].to_list()[0],
-                )
+                    data = data,
+                    )
             except:
-                print(row['pubchem_ids'], row['kegg_names'], row['kegg_compounds'], row['inchi'], row['inchikeys'], row['chebi_ids'], row['smiles'])
+                print(row['pubchem_ids'], row['name'], row['kegg_compounds'], row['inchi'], row['inchikeys'], row['chebi_ids'], row['smiles'])
             self.metabolites.append(new_metabolite)
         print("-- Populate metabolome: done")
 
@@ -306,40 +324,12 @@ class Transcriptome:
         organism_full: str = None,
         ensembl: bool = False,
         ensembl_release: int = 109,
-        kegg_ftp: bool = False,
-        kegg_api: bool = False,
-        ftp_base_path: str = None,
         biotype: str = None,
         transcript_column_name: str = None,
-        input_data_value_column_name: str = None,
-        input_data_p_value_column_name: str = None,
     ):
         self.kegg_organism = kegg_organism
         self.organism_full = organism_full
         self.genes = []
-        # Currently commented out because we should probably just provide Ensembl and get KEGG info from there
-        # if kegg_ftp:
-        #    print('-- Populate genes from KEGG FTP')
-        #    for _, row in kegg_ftp_list_genes(self.kegg_organism, ftp_base_path).iterrows():
-        #        new_gene = Gene()
-        #        new_gene.kegg_id = row[0]
-        #        new_gene.ncbi_id = row[0]
-        #        new_gene.type = row[1]
-        #        new_gene.name = row[2]
-        #        new_gene.description = row[3]
-        #        new_gene.kegg_organism = self.kegg_organism
-        #        self.genes.append(new_gene)
-        # elif kegg_api:
-        #    print('-- Populate genes from KEGG API')
-        #    for _, row in kegg_list_genes(self.kegg_organism).iterrows():
-        #        new_gene = Gene()
-        #        new_gene.kegg_id = row[0]
-        #        new_gene.ncbi_id = row[0]
-        #        new_gene.type = row[1]
-        #        new_gene.name = row[2]
-        #        new_gene.description = row[3]
-        #        new_gene.kegg_organism = self.kegg_organism
-        #        self.genes.append(new_gene)
         if ensembl:
             ensembl_download_release(
                 release_number=ensembl_release,
@@ -353,24 +343,26 @@ class Transcriptome:
                 print(f"-- Filter transcripts by biotype: {biotype}")
                 if not isinstance(biotype, list):
                     biotype = [biotype]
-                # mask = [True if transcript_type in biotype else False for transcript_type in transcripts_df['biotype'].to_list()]
-                # transcripts_df = transcripts_df[mask]
                 transcripts_df = transcripts_df[
                     transcripts_df["biotype"].isin(biotype)
                 ]
             if self.input_id_type == "ensembl":
                 print("-- Populate genes from Ensembl reduced by input data")
-                # mask = [True if transcript in self.input_ids else False for transcript in transcripts_df['ensembl_gene_id'].to_list()]
-                # transcripts_df = transcripts_df[mask]
                 transcripts_df = transcripts_df[
                     transcripts_df["ensembl_gene_id"].isin(self.input_ids)
                 ]
+                transcripts_df = transcripts_df.drop_duplicates().reset_index(drop=True)
                 print(f"--- {len(transcripts_df)} genes found in input data")
             else:
                 print("-- Populate genes from Ensembl (full)")
             ensembl_df = ensembl_expander(transcripts_df)
             for _, row in ensembl_df.iterrows():
-                print(row)
+                if self.input_id_type == "ensembl":
+                    data = self.input_data[
+                        self.input_data[transcript_column_name] == row["ensembl_gene_id"]
+                        ]
+                else:
+                    data = None
                 new_gene = Gene(
                     kegg_id = row["entrez_id"],
                     ncbi_id = row["entrez_id"],
@@ -381,12 +373,7 @@ class Transcriptome:
                     name = row["gene_description"],
                     description = row["gene_name"],
                     kegg_organism = self.kegg_organism,
-                    fc = self.input_data[
-                        self.input_data[transcript_column_name] == row["ensembl_gene_id"]
-                        ][input_data_value_column_name].to_list()[0],
-                    adj_p_value = self.input_data[
-                        self.input_data[transcript_column_name] == row["ensembl_gene_id"]
-                        ][input_data_p_value_column_name].to_list()[0],
+                    data = data,
                 )
                 self.genes.append(new_gene)
         print("-- Populate genes: done")
@@ -477,8 +464,6 @@ class Proteome:
         uniprot: bool = False,
         ensembl_release: int = 109,
         protein_column_name: str = None,
-        input_data_value_column_name: str = None,
-        input_data_p_value_column_name: str = None,
     ):
 
         self.kegg_organism = kegg_organism
@@ -510,32 +495,109 @@ class Proteome:
                 if self.input_id_type == "uniprot":
                     if row["Entry"] not in self.input_ids:
                         continue
-                try:
-                    print(row["EC number"])
-                    print(str(row["EC number"]).split("; "))
-                except:
-                    print("No EC number")
+                if "; " in str(row["EC number"]):
+                    ec_number = str(row["EC number"]).split("; ")
+                elif "  " in str(row["EC number"]):
+                    ec_number = str(row["EC number"]).split("  ")
+                elif str(row["EC number"]) == "nan":
+                    ec_number = []
+                else:
+                    ec_number = [str(row["EC number"])]
+                if self.input_id_type == "uniprot":
+                    data = self.input_data[
+                        self.input_data[protein_column_name] == row["Entry"]
+                        ]
+                else:
+                    data = None
                 new_protein = Protein(
-                    uniprot_id = row["Entry"],
-                    uniprot_name = row["Entry Name"],
-                    review_status = row["Reviewed"],
-                    name = row["Protein names"],
-                    gene = row["Gene Names"],
-                    organism_full = row["Organism"],
-                    length = row["Length"],
-                    ec_number = str(row["EC number"]).split("; "),
-                    ensembl_id = row["Ensembl"],
-                    entrez_id = row["Entrez"],
-                    ncbi_organism = self.ncbi_organism,
-                    fc = self.input_data[
-                        self.input_data[protein_column_name] == row["Entry"]
-                        ][input_data_value_column_name].to_list()[0],
-                    adj_p_value = self.input_data[
-                        self.input_data[protein_column_name] == row["Entry"]
-                        ][input_data_p_value_column_name].to_list()[0],
-                )
+                    uniprot_id=row["Entry"],
+                    uniprot_name=row["Entry Name"],
+                    review_status=row["Reviewed"],
+                    name=row["Protein names"],
+                    gene=row["Gene Names"],
+                    organism_full=row["Organism"],
+                    length=row["Length"],
+                    ec_number=ec_number,
+                    ensembl_id=str(row["Ensembl"]).split(";"),
+                    entrez_id=row["Entrez"],
+                    ncbi_organism=self.ncbi_organism,
+                    data=data,
+                    )
                 self.proteins.append(new_protein)
         print("-- Populate proteins: done")
+
+    def get_activators_and_inhibitors(self, BRENDA_api_client):
+        for protein in self.proteins:
+            protein_activators = []
+            protein_inhibitors = []
+            for i in protein.ec_number:
+                if i != 'nan':
+                    repeat = True
+                    while repeat:
+                        try:
+                            temp_activators = []
+                            temp_inhibitors = []
+                            temp_EC = i #.strip()
+                            temp_ECNumber = 'ecNumber*' + temp_EC
+                            parameters_activ = (
+                                BRENDA_api_client.email,
+                                BRENDA_api_client.password,
+                                temp_ECNumber,
+                                "activatingCompound*",
+                                "commentary*",
+                                "organism*Mus musculus",
+                                "ligandStructureId*",
+                                "literature*"
+                                )
+                            resultString_activ = BRENDA_api_client.client.service.getActivatingCompound(*parameters_activ)
+                            time.sleep(0.05)
+                            if len(resultString_activ) > 0:
+                                for entry in serialize_object(resultString_activ):
+                                    if 'activatingCompound' in entry.keys():
+                                        activator = entry['activatingCompound']
+                                    else:
+                                        activator = None
+                                    if 'ligandStructureId' in entry.keys():
+                                        ligand_id = entry['ligandStructureId']
+                                    else:
+                                        ligand_id = None
+                                    temp_activators.append((activator, ligand_id))
+                            parameters_inhibit = (
+                                BRENDA_api_client.email,
+                                BRENDA_api_client.password,
+                                temp_ECNumber,
+                                "inhibitor*",
+                                "commentary*",
+                                "organism*Mus musculus",
+                                "ligandStructureId*",
+                                "literature*"
+                                )
+                            resultString_inhibit = BRENDA_api_client.client.service.getInhibitors(*parameters_inhibit)
+                            if len(resultString_inhibit) > 0:
+                                for entry in serialize_object(resultString_inhibit):
+                                    if 'inhibitor' in entry.keys():
+                                        inhibitor = entry['inhibitor']
+                                    else:
+                                        inhibitor = None
+                                    if 'ligandStructureId' in entry.keys():
+                                        ligand_id = entry['ligandStructureId']
+                                    else:
+                                        ligand_id = None
+                                    temp_inhibitors.append((inhibitor, ligand_id))
+                            time.sleep(0.05)
+                            protein_activators.append(temp_activators)
+                            protein_inhibitors.append(temp_inhibitors)
+                            repeat = False
+                        except TransportError:
+                            print(temp_EC, 'threw a TransportError')
+                            protein_activators.append([])
+                            protein_inhibitors.append([])
+                            repeat = False
+                        except Exception as e:
+                            print(temp_EC, 'threw an error:', e)
+                            time.sleep(30)
+            protein.activators = [element for sublist in protein_activators for element in sublist]
+            protein.inhibitors = [element for sublist in protein_inhibitors for element in sublist]
 
     def get_interaction_partners(self):
         proteins = [protein.uniprot_id for protein in self.proteins]
@@ -616,14 +678,17 @@ class Proteome:
                         experiments = gene_to_experiment[gene]
                         for experiment in experiments:
                             if experiment in exp_info[0].to_list():
-                                exp_col = pd.to_numeric(
-                                    scores_unsort.loc[:, experiment]
-                                )
-                                mask = [val != 0 for val in exp_col.to_list()]
-                                exp_col = exp_col[mask]
-                                protein.transcription_factor_targets = (
-                                    exp_col.index.to_list()
-                                )
+                                try:
+                                    exp_col = pd.to_numeric(
+                                        scores_unsort.loc[:, experiment]
+                                    )
+                                    mask = [val != 0 for val in exp_col.to_list()]
+                                    exp_col = exp_col[mask]
+                                    protein.transcription_factor_substrates = (
+                                        exp_col.index.to_list()
+                                    )
+                                except KeyError:
+                                    continue
 
     def get_metabolites(self, brenda_api: BRENDA_api = None):
         """
@@ -664,7 +729,7 @@ class Proteome:
             for protein in self.proteins:
                 if database:
                     kegg_ec_to_cpds_list = database["kegg_ec_to_cpds"]
-                    kegg_compounds_list = database["kegg_compounds_list"]
+                    #kegg_compounds_list = database["kegg_compounds_list"]
                     if protein.ec_number is not None:
                         compounds = []
                         for ec in protein.ec_number:
@@ -680,10 +745,11 @@ class Proteome:
                                     f"Could not find substrates/products for {ec}"
                                 )
                         metabolites = [
-                            kegg_compounds_list[
-                                kegg_compounds_list["kegg_compounds"]
-                                == compound
-                            ]["name"].to_string(index=False)
+                            #kegg_compounds_list[
+                            #    kegg_compounds_list["kegg_compounds"]
+                            #    == compound
+                            #]["name"].to_string(index=False)
+                            compound
                             for compound in compounds
                         ]
                         protein.metabolites = list(set(metabolites))
