@@ -39,9 +39,11 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-          # Install optional dependencies that might be needed
+          # Install specific dependencies that are known to be required
           pip install python-louvain bioservices mygene zeep requests
-      
+          pip install pyensembl biopython
+          pip install networkx pandas matplotlib numpy scipy
+          
       - name: Debug environment
         run: |
           echo "Current directory: $(pwd)"
@@ -82,6 +84,7 @@ jobs:
           PYTHONUNBUFFERED: 1
           
       - name: Generate build report
+        if: always()  # Run even if the previous step fails
         run: |
           echo "# Network Build Report" > build_report.md
           echo "Generated: $(date)" >> build_report.md
@@ -106,7 +109,17 @@ jobs:
             echo "" >> build_report.md
           done
           
+      - name: Save log as artifact
+        if: always()  # Run even if previous steps fail
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-logs
+          path: |
+            network_build.log
+            build_report.md
+            
       - name: Commit and push updated networks
+        if: success()  # Only run if the build was successful
         run: |
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
