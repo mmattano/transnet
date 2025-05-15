@@ -12,6 +12,4 @@ matplotlib>=3.3.4
 seaborn>=0.11.2
 pandas>=1.2.4
 zeep
-hashlib
-sys
 Bio
