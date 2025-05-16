@@ -1,6 +1,4 @@
-"""Fix for the import error in build_networks.py.
-
-This script adds the parent directory to the Python path before importing transnet modules.
+"""This script adds the parent directory to the Python path before importing transnet modules.
 """
 
 import os
@@ -61,7 +59,99 @@ ORGANISM_CONFIG = {
     }
 }
 
-def build_organism_network(organism, output_dir, debug=False):
+def generate_reactions_file(output_dir):
+    """
+    Generate a master reactions file to be used by all organisms.
+    
+    Parameters:
+    -----------
+    output_dir : str
+        Directory to save the reactions file
+    
+    Returns:
+    --------
+    str
+        Path to the reactions file
+    """
+    logger.info("Generating master reactions file")
+    
+    # Create reactions layer
+    reactions = Reactions()
+    
+    # Populate from API
+    reactions.populate(from_api=True)
+    
+    logger.info(f"Retrieved {len(reactions.reactions)} reactions from KEGG API")
+    
+    # Create directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save reactions to file
+    reactions_file = os.path.join(output_dir, "master_reactions.csv")
+    
+    # Convert reactions to DataFrame
+    reactions_data = []
+    for reaction in reactions.reactions:
+        reactions_data.append({
+            'id': reaction.id,
+            'name': reaction.name,
+            'equation': reaction.equation,
+            'definition': reaction.definition,
+            'enzyme': reaction.enzyme,
+            'substrates': ";".join(reaction.substrates) if reaction.substrates else "",
+            'products': ";".join(reaction.products) if reaction.products else "",
+            'stoichiometry_substrates': ";".join(map(str, reaction.stoichiometry_substrates)) if reaction.stoichiometry_substrates else "",
+            'stoichiometry_products': ";".join(map(str, reaction.stoichiometry_products)) if reaction.stoichiometry_products else ""
+        })
+    
+    reactions_df = pd.DataFrame(reactions_data)
+    reactions_df.to_csv(reactions_file, index=False)
+    
+    logger.info(f"Saved {len(reactions_data)} reactions to {reactions_file}")
+    
+    return reactions_file
+
+def load_reactions_from_file(file_path):
+    """
+    Load reactions from a CSV file.
+    
+    Parameters:
+    -----------
+    file_path : str
+        Path to the reactions CSV file
+    
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame containing reaction information
+    """
+    logger.info(f"Loading reactions from {file_path}")
+    
+    try:
+        reactions_df = pd.read_csv(file_path)
+        logger.info(f"Loaded {len(reactions_df)} reactions from file")
+        
+        # Convert string representations back to lists
+        reactions_df['substrates'] = reactions_df['substrates'].apply(
+            lambda x: x.split(';') if pd.notna(x) and x else []
+        )
+        reactions_df['products'] = reactions_df['products'].apply(
+            lambda x: x.split(';') if pd.notna(x) and x else []
+        )
+        reactions_df['stoichiometry_substrates'] = reactions_df['stoichiometry_substrates'].apply(
+            lambda x: [float(y) for y in x.split(';')] if pd.notna(x) and x else []
+        )
+        reactions_df['stoichiometry_products'] = reactions_df['stoichiometry_products'].apply(
+            lambda x: [float(y) for y in x.split(';')] if pd.notna(x) and x else []
+        )
+        
+        return reactions_df
+    except Exception as e:
+        logger.error(f"Error loading reactions from {file_path}: {e}")
+        logger.error(traceback.format_exc())
+        return pd.DataFrame()
+
+def build_organism_network(organism, output_dir, reactions_file=None, debug=False):
     """
     Build a network for a specific organism.
     
@@ -71,6 +161,8 @@ def build_organism_network(organism, output_dir, debug=False):
         Organism identifier (human, mouse, yeast, ecoli)
     output_dir : str
         Directory to save the network
+    reactions_file : str, optional
+        Path to the master reactions file
     debug : bool
         If True, run in debug mode with smaller network components
     
@@ -99,8 +191,17 @@ def build_organism_network(organism, output_dir, debug=False):
         # 2. Reactions layer
         logger.info("Building reactions layer")
         reactions = Reactions()
-        reactions.populate(from_api=True)
-        logger.info(f"Created reactions layer with {len(reactions.reactions)} reactions")
+        
+        if reactions_file and os.path.exists(reactions_file):
+            # Load reactions from file
+            reactions_df = load_reactions_from_file(reactions_file)
+            reactions.populate(from_api=False, df=reactions_df)
+            logger.info(f"Created reactions layer with {len(reactions.reactions)} reactions from file")
+        else:
+            # Fallback to API if file not available
+            logger.warning("Reactions file not found, using API instead")
+            reactions.populate(from_api=True)
+            logger.info(f"Created reactions layer with {len(reactions.reactions)} reactions from API")
         
         # 3. Proteome layer
         logger.info("Building proteome layer")
@@ -234,15 +335,22 @@ def main():
                         help="Directory to save the networks")
     parser.add_argument("--debug", action="store_true",
                         help="Run in debug mode with smaller network components")
+    parser.add_argument("--skip-reactions-file", action="store_true",
+                        help="Skip generating the master reactions file and use the API instead")
     
     args = parser.parse_args()
     
     os.makedirs(args.output_dir, exist_ok=True)
     
+    # Generate master reactions file unless skipped
+    reactions_file = None
+    if not args.skip_reactions_file:
+        reactions_file = generate_reactions_file(args.output_dir)
+    
     results = {}
     for organism in args.organisms:
         logger.info(f"======= Starting build for {organism} =======")
-        success = build_organism_network(organism, args.output_dir, args.debug)
+        success = build_organism_network(organism, args.output_dir, reactions_file, args.debug)
         results[organism] = "Success" if success else "Failed"
         logger.info(f"======= Completed build for {organism}: {results[organism]} =======")
     
@@ -254,4 +362,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
