@@ -9,9 +9,6 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from pathlib import Path
 
-# Add the parent directory to the path
-sys.path.append(str(Path(__file__).parent.parent))
-
 from transnet.biology.transnet import Transnet
 from transnet.biology.layers import Pathways, Proteome, Metabolome
 from transnet.visualization.network_vis import (

@@ -8,9 +8,6 @@ import sys
 import logging
 from pathlib import Path
 
-# Add the parent directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 # Now we can import from transnet
 from transnet.biology.transnet import Transnet
 from transnet.biology.layers import Pathways, Proteome, Metabolome

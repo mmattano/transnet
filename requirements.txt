@@ -1,15 +1,38 @@
-# local package
--e .
+# Core dependencies
+numpy>=1.20.0
+pandas>=1.2.0
+networkx>=2.5
+matplotlib>=3.3.0
+seaborn>=0.11.0
+scipy>=1.6.0
 
-# external requirements
-Sphinx==4.3.2
-nbsphinx
-flake8
-pytest
+# Machine learning
+scikit-learn>=0.24.0
+statsmodels>=0.12.0
+
+# Bioinformatics
+bioservices>=1.9.0
+mygene>=3.2.0
+biopython>=1.78
+pyensembl>=2.0.0
+
+# API/Web
+requests>=2.25.0
+zeep>=4.0.0
+
+# Visualization (optional)
+plotly>=5.0.0
+
+# Documentation
+Sphinx>=4.3.2
+nbsphinx>=0.8.0
+
+# Development
+pytest>=6.0
+pytest-cov>=2.10
+black>=21.0
+flake8>=3.8
 python-dotenv>=0.5.1
-numpy>=1.20.1
-matplotlib>=3.3.4
-seaborn>=0.11.2
-pandas>=1.2.4
-zeep
-Bio
+
+# Local package
+-e .
