@@ -1,7 +1,7 @@
 """Connecting transomics network
 """
 
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple
 import pandas as pd
 import networkx as nx
 import logging
@@ -45,6 +45,10 @@ class Transnet:
         self.metabolome = metabolome
         self.reactions = reactions
         self.graph = None
+        
+        self.cross_layer_edges = pd.DataFrame()
+        self.edge_types = {}
+        self._edge_index_built = False
 
     def __repr__(self):
         return f"<Transnet {self.name}>"
@@ -651,4 +655,420 @@ class Transnet:
         
         logger.info(f"Loaded network from {input_dir}")
         return transnet
+    
+    def build_cross_layer_edge_index(self) -> pd.DataFrame:
+        """
+        Build queryable edge structure across all layers.
+        
+        Creates a comprehensive DataFrame of all cross-layer interactions with metadata
+        about source/target layers, edge types, and biological evidence.
+        
+        Returns:
+        --------
+        pd.DataFrame
+            DataFrame with columns: source, target, source_layer, target_layer,
+            edge_type, weight, evidence
+        """
+        logger.info("Building cross-layer edge index")
+        edges = []
+        
+        # 1. Protein-Metabolite edges from enzymatic reactions
+        if self.proteome and self.metabolome:
+            logger.info("Adding protein-metabolite edges")
+            for protein in self.proteome.proteins:
+                if hasattr(protein, 'metabolites') and protein.metabolites:
+                    for metabolite in protein.metabolites:
+                        edges.append({
+                            'source': str(protein.uniprot_id),
+                            'target': str(metabolite),
+                            'source_layer': 'Proteome',
+                            'target_layer': 'Metabolome',
+                            'edge_type': 'enzymatic',
+                            'weight': 1.0,
+                            'evidence': f"EC:{','.join(protein.ec_number) if protein.ec_number else 'unknown'}"
+                        })
+        
+        # 2. Gene-Protein edges (translation)
+        if self.transcriptome and self.proteome:
+            logger.info("Adding gene-protein edges")
+            gene_protein_interactions = self.gene_protein_interaction()
+            for interaction in gene_protein_interactions:
+                edges.append({
+                    'source': str(interaction[0]),  # gene
+                    'target': str(interaction[1]),  # protein
+                    'source_layer': 'Transcriptome',
+                    'target_layer': 'Proteome',
+                    'edge_type': 'translation',
+                    'weight': float(interaction[2]),
+                    'evidence': 'gene_to_protein'
+                })
+        
+        # 3. TF-Gene edges (transcriptional regulation)
+        if self.transcriptome and self.proteome:
+            logger.info("Adding transcription factor-gene edges")
+            tf_interactions = self.transcription_factor_interaction()
+            for interaction in tf_interactions:
+                edges.append({
+                    'source': str(interaction[0]),  # TF protein
+                    'target': str(interaction[1]),  # target gene
+                    'source_layer': 'Proteome',
+                    'target_layer': 'Transcriptome',
+                    'edge_type': 'transcriptional_regulation',
+                    'weight': float(interaction[2]),
+                    'evidence': 'ChIP-Atlas'
+                })
+        
+        # 4. Protein-Protein edges (PPI from STRING)
+        if self.proteome:
+            logger.info("Adding protein-protein interaction edges")
+            ppi_interactions = self.protein_protein_interaction()
+            for interaction in ppi_interactions:
+                edges.append({
+                    'source': str(interaction[0]),
+                    'target': str(interaction[1]),
+                    'source_layer': 'Proteome',
+                    'target_layer': 'Proteome',
+                    'edge_type': 'protein_interaction',
+                    'weight': float(interaction[2]),
+                    'evidence': 'STRING'
+                })
+        
+        # 5. Enzyme-Reaction-Metabolite edges
+        if self.proteome and self.metabolome and self.reactions:
+            logger.info("Adding enzyme-reaction-metabolite edges")
+            enzyme_rxn_interactions = self.enzyme_reaction_interaction()
+            for interaction in enzyme_rxn_interactions:
+                # These create two edges: enzyme->reaction and reaction->metabolite
+                if interaction[3] == 'Proteome' and interaction[4] == 'Reactions':
+                    edges.append({
+                        'source': str(interaction[0]),
+                        'target': str(interaction[1]),
+                        'source_layer': 'Proteome',
+                        'target_layer': 'Reactions',
+                        'edge_type': 'catalysis',
+                        'weight': float(interaction[2]),
+                        'evidence': 'KEGG_reactions'
+                    })
+                elif interaction[3] == 'Reactions' and interaction[4] == 'Metabolome':
+                    edges.append({
+                        'source': str(interaction[0]),
+                        'target': str(interaction[1]),
+                        'source_layer': 'Reactions',
+                        'target_layer': 'Metabolome',
+                        'edge_type': 'reaction_participant',
+                        'weight': float(interaction[2]),
+                        'evidence': 'KEGG_reactions'
+                    })
+        
+        # Create DataFrame
+        self.cross_layer_edges = pd.DataFrame(edges)
+        
+        # Remove duplicates (keep first occurrence)
+        if not self.cross_layer_edges.empty:
+            self.cross_layer_edges = self.cross_layer_edges.drop_duplicates(
+                subset=['source', 'target', 'edge_type'],
+                keep='first'
+            ).reset_index(drop=True)
+        
+        # Create edge type indices for fast lookup
+        if not self.cross_layer_edges.empty:
+            self.edge_types = {
+                edge_type: self.cross_layer_edges[
+                    self.cross_layer_edges['edge_type'] == edge_type
+                ].copy()
+                for edge_type in self.cross_layer_edges['edge_type'].unique()
+            }
+        else:
+            self.edge_types = {}
+        
+        self._edge_index_built = True
+        
+        logger.info(
+            f"Built cross-layer edge index with {len(self.cross_layer_edges)} edges "
+            f"across {len(self.edge_types)} edge types"
+        )
+        
+        return self.cross_layer_edges
+    
+    def get_neighbors(
+        self, 
+        node_id: str, 
+        layer: Optional[str] = None, 
+        edge_type: Optional[str] = None,
+        direction: str = 'both'
+    ) -> List[str]:
+        """
+        Get all neighbors of a node, optionally filtered by layer/type.
+        
+        Parameters:
+        -----------
+        node_id : str
+            Node identifier
+        layer : str, optional
+            Filter neighbors by layer (e.g., 'Proteome', 'Metabolome')
+        edge_type : str, optional
+            Filter by edge type (e.g., 'enzymatic', 'translation')
+        direction : str
+            Direction of edges: 'outgoing', 'incoming', or 'both' (default)
+        
+        Returns:
+        --------
+        List[str]
+            List of neighbor node IDs
+        """
+        if not self._edge_index_built:
+            logger.warning("Edge index not built. Building now...")
+            self.build_cross_layer_edge_index()
+        
+        if self.cross_layer_edges.empty:
+            logger.warning("No edges in cross-layer edge index")
+            return []
+        
+        neighbors = []
+        
+        # Get outgoing edges
+        if direction in ['outgoing', 'both']:
+            edges_from = self.cross_layer_edges[
+                self.cross_layer_edges['source'] == str(node_id)
+            ]
+            
+            if layer:
+                edges_from = edges_from[edges_from['target_layer'] == layer]
+            
+            if edge_type:
+                edges_from = edges_from[edges_from['edge_type'] == edge_type]
+            
+            neighbors.extend(edges_from['target'].tolist())
+        
+        # Get incoming edges
+        if direction in ['incoming', 'both']:
+            edges_to = self.cross_layer_edges[
+                self.cross_layer_edges['target'] == str(node_id)
+            ]
+            
+            if layer:
+                edges_to = edges_to[edges_to['source_layer'] == layer]
+            
+            if edge_type:
+                edges_to = edges_to[edges_to['edge_type'] == edge_type]
+            
+            neighbors.extend(edges_to['source'].tolist())
+        
+        return list(set(neighbors))
+    
+    def find_paths(
+        self, 
+        source: str, 
+        target: str, 
+        max_length: int = 3,
+        allowed_layers: Optional[List[str]] = None,
+        allowed_edge_types: Optional[List[str]] = None
+    ) -> List[List[str]]:
+        """
+        Find all paths between two nodes up to max_length.
+        
+        This is the core method for cross-layer discovery. Given a changed
+        gene and a changed metabolite, find mechanistic paths connecting them.
+        
+        Parameters:
+        -----------
+        source : str
+            Source node ID
+        target : str
+            Target node ID
+        max_length : int
+            Maximum path length (number of edges)
+        allowed_layers : List[str], optional
+            Only use nodes from these layers
+        allowed_edge_types : List[str], optional
+            Only use edges of these types
+        
+        Returns:
+        --------
+        List[List[str]]
+            List of paths, where each path is a list of node IDs
+        
+        Examples:
+        ---------
+        # Find paths from a gene to a metabolite
+        >>> paths = transnet.find_paths('ENSG00000123456', 'C00002', max_length=4)
+        >>> for path in paths:
+        ...     print(' -> '.join(path))
+        """
+        if not self._edge_index_built:
+            logger.warning("Edge index not built. Building now...")
+            self.build_cross_layer_edge_index()
+        
+        # Build filtered graph if needed
+        edges_to_use = self.cross_layer_edges.copy()
+        
+        if allowed_edge_types:
+            edges_to_use = edges_to_use[
+                edges_to_use['edge_type'].isin(allowed_edge_types)
+            ]
+        
+        if allowed_layers:
+            edges_to_use = edges_to_use[
+                edges_to_use['source_layer'].isin(allowed_layers) &
+                edges_to_use['target_layer'].isin(allowed_layers)
+            ]
+        
+        # Build NetworkX graph
+        G = nx.DiGraph()
+        
+        for _, row in edges_to_use.iterrows():
+            G.add_edge(
+                row['source'], 
+                row['target'],
+                weight=row['weight'],
+                edge_type=row['edge_type']
+            )
+        
+        # Find paths
+        try:
+            paths = list(nx.all_simple_paths(
+                G, 
+                str(source), 
+                str(target), 
+                cutoff=max_length
+            ))
+            logger.info(f"Found {len(paths)} paths from {source} to {target}")
+            return paths
+        except (nx.NodeNotFound, nx.NetworkXNoPath) as e:
+            logger.warning(f"Could not find paths: {e}")
+            return []
+    
+    def get_path_annotations(
+        self, 
+        path: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Get annotations for edges in a path.
+        
+        Parameters:
+        -----------
+        path : List[str]
+            List of node IDs representing a path
+        
+        Returns:
+        --------
+        List[Dict[str, Any]]
+            List of edge annotations, one for each edge in the path
+        """
+        if not self._edge_index_built:
+            self.build_cross_layer_edge_index()
+        
+        annotations = []
+        
+        for i in range(len(path) - 1):
+            source = str(path[i])
+            target = str(path[i + 1])
+            
+            # Find edge(s) between these nodes
+            edge_matches = self.cross_layer_edges[
+                (self.cross_layer_edges['source'] == source) &
+                (self.cross_layer_edges['target'] == target)
+            ]
+            
+            if not edge_matches.empty:
+                # Take first match if multiple
+                edge_data = edge_matches.iloc[0].to_dict()
+                annotations.append(edge_data)
+            else:
+                # Edge not found (shouldn't happen if path is valid)
+                annotations.append({
+                    'source': source,
+                    'target': target,
+                    'edge_type': 'unknown',
+                    'weight': 0.0,
+                    'evidence': 'not_found'
+                })
+        
+        return annotations
+    
+    def query_cross_layer_relationships(
+        self,
+        changed_nodes: Dict[str, List[str]],
+        p_value_threshold: float = 0.05,
+        path_max_length: int = 3
+    ) -> pd.DataFrame:
+        """
+        Query cross-layer relationships between changed nodes.
+        
+        This is the main entry point for cross-layer discovery analysis.
+        Given sets of changed nodes from different omics layers, find
+        mechanistic paths connecting them.
+        
+        Parameters:
+        -----------
+        changed_nodes : Dict[str, List[str]]
+            Dictionary mapping layer names to lists of changed node IDs
+            Example: {'Transcriptome': ['gene1', 'gene2'], 
+                     'Metabolome': ['met1', 'met2']}
+        p_value_threshold : float
+            P-value threshold for considering a node as changed
+        path_max_length : int
+            Maximum path length to search
+        
+        Returns:
+        --------
+        pd.DataFrame
+            DataFrame with columns: source, target, path_length, path, 
+            source_layer, target_layer, edge_types
+        """
+        if not self._edge_index_built:
+            self.build_cross_layer_edge_index()
+        
+        logger.info(f"Querying cross-layer relationships among {sum(len(v) for v in changed_nodes.values())} changed nodes")
+        
+        results = []
+        
+        # For each pair of layers
+        layer_pairs = [
+            (l1, l2) for l1 in changed_nodes.keys() 
+            for l2 in changed_nodes.keys() 
+            if l1 != l2
+        ]
+        
+        for source_layer, target_layer in layer_pairs:
+            source_nodes = changed_nodes[source_layer]
+            target_nodes = changed_nodes[target_layer]
+            
+            logger.info(f"Finding paths from {source_layer} to {target_layer}")
+            
+            # Find paths between all pairs
+            for source in source_nodes:
+                for target in target_nodes:
+                    paths = self.find_paths(
+                        source, 
+                        target, 
+                        max_length=path_max_length
+                    )
+                    
+                    for path in paths:
+                        # Get edge types in path
+                        annotations = self.get_path_annotations(path)
+                        edge_types = [a['edge_type'] for a in annotations]
+                        
+                        results.append({
+                            'source': source,
+                            'target': target,
+                            'source_layer': source_layer,
+                            'target_layer': target_layer,
+                            'path_length': len(path) - 1,
+                            'path': ' -> '.join(path),
+                            'edge_types': ', '.join(edge_types),
+                            'evidence': ', '.join([a['evidence'] for a in annotations])
+                        })
+        
+        results_df = pd.DataFrame(results)
+        
+        if not results_df.empty:
+            # Sort by path length
+            results_df = results_df.sort_values('path_length').reset_index(drop=True)
+            logger.info(f"Found {len(results_df)} cross-layer paths")
+        else:
+            logger.warning("No cross-layer paths found")
+        
+        return results_df
         
