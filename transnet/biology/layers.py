@@ -21,9 +21,7 @@ __all__ = [
 ]
 
 # Import elements after defining __all__ to avoid circular imports
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from transnet.biology.elements import Reaction, Pathway, Metabolite, Gene, Protein
+from transnet.biology.elements import Reaction, Pathway, Metabolite, Gene, Protein
 from transnet.api.kegg import (
     kegg_create_reaction_table, kegg_list_pathways, kegg_link_pathway, 
     kegg_link_ec, kegg_list_genes, kegg_conv_ncbi_idtable, kegg_ec_to_cpds, 

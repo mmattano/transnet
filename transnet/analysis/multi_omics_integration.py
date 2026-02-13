@@ -17,7 +17,9 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
 from sklearn.decomposition import NMF, FactorAnalysis, PCA
 from sklearn.cross_decomposition import CCA
-from sklearn.impute import SimpleImputer, KNNImputer, IterativeImputer
+from sklearn.impute import SimpleImputer, KNNImputer
+from sklearn.experimental import enable_iterative_imputer  # noqa
+from sklearn.impute import IterativeImputer
 from sklearn.preprocessing import StandardScaler
 from scipy import stats
 from scipy.stats import pearsonr, spearmanr
@@ -715,7 +717,17 @@ class MultiOmicsIntegrator:
                 'path_length': path_length
             })
         
-        results_df = pd.DataFrame(results).sort_values('combined_score', ascending=False)
+        if not results:
+            logger.warning("No correlation results found")
+            return pd.DataFrame(columns=[
+                'feature1', 'feature2', 'layer1', 'layer2', 
+                'correlation', 'p_value', 'network_prior', 
+                'combined_score', 'network_path', 'path_length'
+            ])
+
+        results_df = pd.DataFrame(results)
+        if not results_df.empty:
+            results_df = results_df.sort_values('combined_score', ascending=False)
         
         logger.info(f"Found {len(results_df)} feature pairs with combined evidence")
         logger.info(f"  - {(results_df['network_prior'] > 0).sum()} pairs with network connection")
