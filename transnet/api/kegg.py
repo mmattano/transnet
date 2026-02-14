@@ -449,19 +449,27 @@ def kegg_create_reaction_table(print_max_repeats_needed=False):
         for i, substrate in enumerate(temp_substrates):
             if len(substrate.split(" ")) > 1:
                 stoic = substrate.split(" ")[0]
-                stoichiometry_substrate.append(stoic)
+                # Handle non-numeric stoichiometry (e.g., 'n' for variable)
+                try:
+                    stoichiometry_substrate.append(float(stoic))
+                except ValueError:
+                    stoichiometry_substrate.append(None)  # Variable stoichiometry
                 temp_substrates[i] = substrate.split(" ")[1]
             else:
-                stoichiometry_substrate.append(1)
+                stoichiometry_substrate.append(1.0)
         temp_products = eq_parts[1].split(" + ")
         stoichiometry_product = []
         for i, product in enumerate(temp_products):
             if len(product.split(" ")) > 1:
                 stoic = product.split(" ")[0]
-                stoichiometry_product.append(stoic)
+                # Handle non-numeric stoichiometry (e.g., 'n' for variable)
+                try:
+                    stoichiometry_product.append(float(stoic))
+                except ValueError:
+                    stoichiometry_product.append(None)  # Variable stoichiometry
                 temp_products[i] = product.split(" ")[1]
             else:
-                stoichiometry_product.append(1)
+                stoichiometry_product.append(1.0)
         substrates.append(temp_substrates)
         products.append(temp_products)
         stoichiometry_substrates.append(stoichiometry_substrate)

@@ -1,0 +1,7 @@
+organism: mouse
+build_date: 20260130
+pathways_count: 365
+reactions_count: 0
+proteins_count: 50
+metabolites_count: 487
+genes_count: 0

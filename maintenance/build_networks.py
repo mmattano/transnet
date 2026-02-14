@@ -89,16 +89,25 @@ def generate_reactions_file(output_dir):
     # Convert reactions to DataFrame
     reactions_data = []
     for reaction in reactions.reactions:
+        # Handle None values in stoichiometry lists
+        stoich_subs = []
+        if reaction.stoichiometry_substrates:
+            stoich_subs = [str(x) if x is not None else "None" for x in reaction.stoichiometry_substrates]
+        
+        stoich_prods = []
+        if reaction.stoichiometry_products:
+            stoich_prods = [str(x) if x is not None else "None" for x in reaction.stoichiometry_products]
+        
         reactions_data.append({
-            'id': reaction.id,
+            'reaction': reaction.id,  # Use 'reaction' to match layers.py expectations
             'name': reaction.name,
             'equation': reaction.equation,
             'definition': reaction.definition,
             'enzyme': reaction.enzyme,
             'substrates': ";".join(reaction.substrates) if reaction.substrates else "",
             'products': ";".join(reaction.products) if reaction.products else "",
-            'stoichiometry_substrates': ";".join(map(str, reaction.stoichiometry_substrates)) if reaction.stoichiometry_substrates else "",
-            'stoichiometry_products': ";".join(map(str, reaction.stoichiometry_products)) if reaction.stoichiometry_products else ""
+            'stoichiometry_substrates': ";".join(stoich_subs) if stoich_subs else "",
+            'stoichiometry_products': ";".join(stoich_prods) if stoich_prods else ""
         })
     
     reactions_df = pd.DataFrame(reactions_data)
@@ -135,12 +144,24 @@ def load_reactions_from_file(file_path):
         reactions_df['products'] = reactions_df['products'].apply(
             lambda x: x.split(';') if pd.notna(x) and x else []
         )
-        reactions_df['stoichiometry_substrates'] = reactions_df['stoichiometry_substrates'].apply(
-            lambda x: [float(y) for y in x.split(';')] if pd.notna(x) and x else []
-        )
-        reactions_df['stoichiometry_products'] = reactions_df['stoichiometry_products'].apply(
-            lambda x: [float(y) for y in x.split(';')] if pd.notna(x) and x else []
-        )
+        
+        # Handle stoichiometry with potential None values
+        def parse_stoichiometry(x):
+            if pd.notna(x) and x:
+                values = []
+                for y in x.split(';'):
+                    if y == "None":
+                        values.append(None)
+                    else:
+                        try:
+                            values.append(float(y))
+                        except ValueError:
+                            values.append(None)  # Fallback for unparseable values
+                return values
+            return []
+        
+        reactions_df['stoichiometry_substrates'] = reactions_df['stoichiometry_substrates'].apply(parse_stoichiometry)
+        reactions_df['stoichiometry_products'] = reactions_df['stoichiometry_products'].apply(parse_stoichiometry)
         
         return reactions_df
     except Exception as e:

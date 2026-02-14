@@ -20,7 +20,7 @@ from sklearn.cross_decomposition import CCA
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.experimental import enable_iterative_imputer  # noqa
 from sklearn.impute import IterativeImputer
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from scipy import stats
 from scipy.stats import pearsonr, spearmanr
 import logging
@@ -133,13 +133,18 @@ class MultiOmicsIntegrator:
             if imputation_strategy != 'none':
                 df = self._impute_missing(df, imputation_strategy, layer_name)
             
-            # Ensure non-negative for NMF
+            # Scale data based on method requirements
             if self.method == 'nmf':
+                # NMF requires non-negative values
+                # Ensure non-negative first, then scale to [0,1]
                 df = df.clip(lower=0)
+                scaler = MinMaxScaler()
+                data_scaled = scaler.fit_transform(df)
+            else:
+                # PCA and FA work with standardized data
+                scaler = StandardScaler()
+                data_scaled = scaler.fit_transform(df)
             
-            # Standardize
-            scaler = StandardScaler()
-            data_scaled = scaler.fit_transform(df)
             self.scalers_[layer_name] = scaler
             
             processed_data[layer_name] = pd.DataFrame(

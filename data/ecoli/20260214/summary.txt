@@ -1,0 +1,7 @@
+organism: ecoli
+build_date: 20260214
+pathways_count: 137
+reactions_count: 12384
+proteins_count: 50
+metabolites_count: 487
+genes_count: 0

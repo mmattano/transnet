@@ -1,0 +1,13 @@
+SourceNode,TargetNode,Weight,SourceLayer,TargetLayer
+A0ABF7PIN1,PMT2,1.0,Proteome,Transcriptome
+A0ABF7PIN1,LTE1,1.0,Proteome,Transcriptome
+A0ABF7PIN1,FUN26,1.0,Proteome,Transcriptome
+A0ABF7PIN1,CCR4,1.0,Proteome,Transcriptome
+A0ABF7PIN1,VAR1,1.0,Proteome,Transcriptome
+A0ABF7PIN1,VPS8,1.0,Proteome,Transcriptome
+A0ABF7PIN1,SSA1,1.0,Proteome,Transcriptome
+A0ABF7PIN1,SPO7,1.0,Proteome,Transcriptome
+A0ABF7PIN1,MDM10,1.0,Proteome,Transcriptome
+A0ABF7PIN1,FUN14,1.0,Proteome,Transcriptome
+A0ABF7PIN1,ERP2,1.0,Proteome,Transcriptome
+A0ABF7PIN1,EFB1,1.0,Proteome,Transcriptome

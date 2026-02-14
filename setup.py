@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="transnet",
-    version="0.1.0",
+    version="0.1.1",
     author="Matthias Anagho-Mattanovich",
     author_email="matthias.mattanovich@sund.ku.dk",
     description="A package for trans-omics data integration and network analysis",
@@ -18,6 +18,7 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Intended Audience :: Science/Research",
@@ -25,7 +26,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "numpy>=1.20.0",
+        "numpy>=1.20.0,<2.0",  # Pin to 1.x for compatibility with dependencies
         "pandas>=1.2.0",
         "networkx>=2.5",
         "matplotlib>=3.3.0",
