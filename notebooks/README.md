@@ -57,12 +57,6 @@ Each writes CSVs and figures under `data/<study>_results/`. The narrative
 versions, with the figures and the comparison against each paper's own
 conclusions, are in `docs/source/`.
 
-## extra/
-
-Analyses written for a specific collaboration rather than for the
-documentation. `extra/oslo2_breast_cancer.py` compares clinical outcome groups
-in a breast cancer cohort; its README states what data it expects.
-
 ## Conventions
 
 * Loading data is not analysis: the study loaders live in `transnet.datasets`,
