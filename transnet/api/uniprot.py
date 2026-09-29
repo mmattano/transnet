@@ -5,28 +5,39 @@ __all__ = ["uniprot_list_proteins", "uniprot_add_entrez_id"]
 import pandas as pd
 import mygene
 
-
-def uniprot_list_proteins(org_ncbi_num: str = 9606,) -> pd.DataFrame:
-    """
-    Reference table for KEGG genes.
+def uniprot_list_proteins(
+    org_ncbi_num: str = 9606,
+    reviewed_only: bool = False,
+) -> pd.DataFrame:
+    """Reference table of an organism's proteins from UniProt.
 
     Parameters
     ----------
     org_ncbi_num : str
-        NCBI organism number.
+        NCBI taxon id.
+    reviewed_only : bool
+        Restrict to reviewed (Swiss-Prot) entries. Mouse has ~17,000 reviewed
+        proteins against ~88,000 total, the rest being unreviewed TrEMBL
+        entries that are largely predicted isoforms. Those inflate every
+        downstream lookup -- STRING times out on them, and BRENDA gains
+        nothing, since EC numbers are what it keys on -- while adding little
+        the reviewed set does not already cover.
 
     Returns
     -------
     organism_proteins : pd.DataFrame
         Dataframe with UniProt proteins and additional information.
-
     """
+    query = f"(organism_id:{org_ncbi_num})"
+    if reviewed_only:
+        query += "%20AND%20(reviewed:true)"
+
     url = (
         f"https://rest.uniprot.org/uniprotkb/stream?fields="
         f"accession%2Creviewed%2Cid%2Cprotein_name%2Cgene_names%2C"
         f"organism_name%2Clength%2Cxref_string%2Cxref_brenda%2C"
         f"xref_reactome%2Cxref_ensembl%2Cxref_kegg%2Cxref_geneid%2C"
-        f"ec&format=tsv&query=(organism_id:{org_ncbi_num})"
+        f"ec&format=tsv&query={query}"
     )
 
     organism_proteins = pd.read_table(url, sep="\t", header=0)

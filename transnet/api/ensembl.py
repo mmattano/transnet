@@ -7,9 +7,11 @@ __all__ = [
 ]
 
 import subprocess
-from pyensembl import EnsemblRelease
 import pandas as pd
-import mygene
+
+# pyensembl and mygene are heavy, optional dependencies: only the two functions
+# below need them, and importing them at module scope makes the whole package
+# unimportable when they are absent.
 
 
 def ensembl_download_release(release_number, organism_full):
@@ -45,6 +47,8 @@ def ensembl_get_transcripts(
         List of transcripts.
     """
 
+    from pyensembl import EnsemblRelease
+
     data = EnsemblRelease(release_number, species=f"{organism_full}")
     transcript_df = pd.DataFrame(
         [
@@ -73,6 +77,8 @@ def ensembl_expander(
     transcript_df : pd.DataFrame
         Data frame of transcripts with gene names and descriptions.
     """
+    import mygene
+
     transcript_df = transcript_df.copy(deep=True)
 
     # Get gene names

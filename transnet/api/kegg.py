@@ -15,13 +15,17 @@ __all__ = [
     "kegg_create_reaction_table",
     "kegg_to_chebi",
     "chebi_to_kegg",
+    "kegg_signaling_relations",
 ]
 
 import pandas as pd
 from urllib.error import HTTPError
-from bioservices import KEGG, ChEBI
 import time
 import requests
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 
 def kegg_conv_ncbi_idtable(org_abb: str = "hsa",) -> pd.DataFrame:
@@ -101,7 +105,11 @@ def kegg_link_ec(org_abb: str = "hsa",) -> pd.DataFrame:
         Dataframe with genes and their corresponding enzyme comission numbers.
 
     """
-    url = f"http://rest.kegg.jp/link/ec/{org_abb}"
+    # KEGG rejects "ec" as the target database when the source is an organism
+    # (`/link/ec/sce` returns 400), though it still accepts it for pathway maps.
+    # "enzyme" is the spelling that works, and returns the same two columns in
+    # the same order: organism gene, then EC number.
+    url = f"https://rest.kegg.jp/link/enzyme/{org_abb}"
 
     organism_ec = pd.read_table(url, sep="\t", header=None)
     cols = organism_ec.columns
@@ -426,7 +434,13 @@ def kegg_create_reaction_table(print_max_repeats_needed=False):
     stoichiometry_substrates = []
     products = []
     stoichiometry_products = []
+    reversibilities = []
     max_repeats_needed = 0
+
+    # KEGG writes equations with one of three arrows.  Only "<=>" asserts
+    # reversibility; the directed arrows mark an irreversible reaction, which
+    # matters for tracing regulatory paths through the metabolic layer.
+    arrows = [(" <=> ", True), (" => ", False), (" <= ", False)]
 
     for i, reaction in enumerate(reactions["reaction"].to_list()):
         equation, defintion, enzyme, repeat = _kegg_get_equation(reaction)
@@ -443,7 +457,23 @@ def kegg_create_reaction_table(print_max_repeats_needed=False):
                 time.sleep(0.1)
         if enzyme is not None:
             enzyme = enzyme.split('        ')
-        eq_parts = equation.split(" <=> ")
+
+        reversible = True
+        eq_parts = [equation]
+        for arrow, arrow_reversible in arrows:
+            if arrow in equation:
+                eq_parts = equation.split(arrow)
+                reversible = arrow_reversible
+                # "A <= B" reads right-to-left; normalise so that eq_parts[0]
+                # is always the substrate side.
+                if arrow == " <= ":
+                    eq_parts = eq_parts[::-1]
+                break
+        if len(eq_parts) < 2:
+            logger.warning(f"Could not parse equation for {reaction}: {equation!r}")
+            eq_parts = [eq_parts[0], ""]
+        reversibilities.append(reversible)
+
         temp_substrates = eq_parts[0].split(" + ")
         stoichiometry_substrate = []
         for i, substrate in enumerate(temp_substrates):
@@ -485,6 +515,7 @@ def kegg_create_reaction_table(print_max_repeats_needed=False):
     reactions["products"] = products
     reactions["stoichiometry_substrates"] = stoichiometry_substrates
     reactions["stoichiometry_products"] = stoichiometry_products
+    reactions["reversible"] = reversibilities
 
     if print_max_repeats_needed:
         print("Maximum number of repeats needed:", max_repeats_needed)
@@ -507,7 +538,8 @@ def kegg_to_chebi(kegg_compound_ids):
     """
     chebi_ids = []
 
-    kegg_bio = KEGG(verbose=False)
+    from bioservices import KEGG as _KEGG
+    kegg_bio = _KEGG(verbose=False)
     map_kegg_chebi = kegg_bio.conv("chebi", "compound")
 
     for compound in kegg_compound_ids:
@@ -527,42 +559,177 @@ def kegg_to_chebi(kegg_compound_ids):
     return kegg_chebi_conversion
 
 def chebi_to_kegg(chebi_compound_ids):
-    """Inverse of kegg_to_chebi.
-    
+    """Convert ChEBI IDs to KEGG compound IDs using the KEGG REST API.
+
     Parameters
     ----------
     chebi_compound_ids : list
-        A list of ChEBI compound IDs.
-        
+        A list of ChEBI compound IDs (e.g. ``['CHEBI:15422', 'CHEBI:16761']``).
+
     Returns
     -------
-    chebi_kegg_conversion = pandas.DataFrame
-        A dataframe with ChEBI compound IDs and KEGG IDs.
+    chebi_kegg_conversion : pandas.DataFrame
+        DataFrame with columns ``chebi_compounds`` and ``kegg_compounds``.
     """
-    kegg_ids = []
+    def _bare(value):
+        """The numeric part of a ChEBI id.
 
-    chebi_bio = ChEBI()
-    for compound in chebi_compound_ids:
-        if compound is None:
-            kegg_ids.append(None)
-            continue
-        chebi_entry = chebi_bio.getCompleteEntity(compound)
-        try:
-            found_kegg = False
-            for db_links in chebi_entry.DatabaseLinks:
-                if db_links.type == "KEGG COMPOUND accession":
-                    kegg_ids.append(db_links.data)
-                    found_kegg = True
-                    break
-            if not found_kegg:
-                kegg_ids.append(None)
-        except AttributeError:
-            kegg_ids.append(None)
-            continue
+        KEGG's conversion table writes ``chebi:10`` while ChEBI itself, and
+        every client that talks to it, writes ``CHEBI:10``. Comparing the two
+        verbatim never matches, so both sides are reduced to the number.
+        """
+        text = str(value).strip().lower()
+        if text.startswith("chebi:"):
+            text = text[len("chebi:"):]
+        return text.strip()
 
-    chebi_kegg_conversion = pd.DataFrame(
-        {"chebi_compounds": chebi_compound_ids, "kegg_compounds": kegg_ids,},
+    # Download the full ChEBI->KEGG mapping from KEGG REST in one request
+    r = requests.get("https://rest.kegg.jp/conv/compound/chebi", timeout=120)
+    r.raise_for_status()
+    chebi_kegg_map = {}
+    for line in r.text.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) == 2:
+            chebi_kegg_map[_bare(parts[0])] = parts[1].replace("cpd:", "").strip()
+
+    kegg_ids = [
+        chebi_kegg_map.get(_bare(c)) if c is not None else None
+        for c in chebi_compound_ids
+    ]
+    matched = sum(1 for k in kegg_ids if k)
+    logger.info(
+        f"chebi_to_kegg: {matched}/{len(kegg_ids)} ChEBI ids resolved to KEGG "
+        f"compounds (table holds {len(chebi_kegg_map):,} mappings)"
+    )
+    return pd.DataFrame(
+        {"chebi_compounds": chebi_compound_ids, "kegg_compounds": kegg_ids},
         columns=["chebi_compounds", "kegg_compounds"],
     )
 
-    return chebi_kegg_conversion
+
+#: KEGG relation subtypes that correspond to a phosphorylation-style
+#: regulatory effect, with the sign of that effect.
+_KEGG_RELATION_SIGNS = {
+    "activation": 1,
+    "expression": 1,
+    "phosphorylation": 0,
+    "inhibition": -1,
+    "repression": -1,
+    "dephosphorylation": 0,
+}
+
+
+def kegg_signaling_relations(organism, pathway_ids=None, max_pathways=None):
+    """Extract kinase-substrate relations from KEGG signaling pathway KGML.
+
+    Parses the KGML of an organism's signal-transduction pathways and returns
+    the protein-protein relations KEGG annotates as activation, inhibition,
+    phosphorylation or dephosphorylation.  These become the ``phosphorylation``
+    and ``kinase_tf`` edges of the optional Signaling layer.
+
+    Parameters
+    ----------
+    organism : str
+        KEGG organism code, e.g. ``"hsa"``.
+    pathway_ids : list of str, optional
+        Restrict to these pathway ids (with or without the organism prefix).
+        Defaults to every pathway KEGG lists for the organism whose name
+        mentions signaling.
+    max_pathways : int, optional
+        Stop after this many pathways.  Useful for demos; KGML is fetched one
+        pathway at a time.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``source``, ``target``, ``sign``, ``subtype``, ``pathway``.
+        Empty if nothing could be retrieved.
+
+    Notes
+    -----
+    KEGG's phosphorylation annotation is partial.  A study with its own
+    phosphoproteomics will get a fuller layer from
+    :meth:`transnet.biology.layers.Signaling.populate_from_table`.
+    """
+    import xml.etree.ElementTree as ET
+
+    if pathway_ids is None:
+        try:
+            pathways = kegg_list_pathways(organism)
+        except Exception as exc:
+            logger.error(f"Could not list KEGG pathways for {organism}: {exc}")
+            return pd.DataFrame(
+                columns=["source", "target", "sign", "subtype", "pathway"]
+            )
+        # kegg_list_pathways returns columns ["pathways_id", "description"].
+        mask = pathways["description"].str.contains(
+            "signal|signaling|MAPK|PI3K|insulin|AMPK|mTOR", case=False, na=False
+        )
+        pathway_ids = pathways.loc[mask, "pathways_id"].tolist()
+
+    if max_pathways:
+        pathway_ids = pathway_ids[:max_pathways]
+
+    rows = []
+    for pathway_id in pathway_ids:
+        pid = str(pathway_id).replace("path:", "")
+        if not pid.startswith(organism):
+            # Accept a bare map number ("04010") as well as a prefixed id.
+            pid = f"{organism}{pid.lstrip('map')}"
+        try:
+            response = requests.get(f"https://rest.kegg.jp/get/{pid}/kgml", timeout=30)
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+        except Exception as exc:
+            logger.debug(f"Skipping KGML for {pid}: {exc}")
+            continue
+
+        # entry id -> gene identifiers it represents
+        entries = {}
+        for entry in root.findall("entry"):
+            if entry.get("type") not in ("gene", "ortholog"):
+                continue
+            names = [n.replace(f"{organism}:", "") for n in (entry.get("name") or "").split()]
+            entries[entry.get("id")] = names
+
+        for relation in root.findall("relation"):
+            if relation.get("type") not in ("PPrel", "GErel"):
+                continue
+            sources = entries.get(relation.get("entry1"), [])
+            targets = entries.get(relation.get("entry2"), [])
+            if not sources or not targets:
+                continue
+            for subtype in relation.findall("subtype"):
+                name = subtype.get("name")
+                if name not in _KEGG_RELATION_SIGNS:
+                    continue
+                sign = _KEGG_RELATION_SIGNS[name]
+                is_tf = relation.get("type") == "GErel"
+                for source in sources:
+                    for target in targets:
+                        rows.append({
+                            "source": source,
+                            "target": target,
+                            "sign": sign,
+                            "subtype": name,
+                            "target_type": "tf" if is_tf else "protein",
+                            "pathway": pid,
+                        })
+        time.sleep(0.1)
+
+    relations = pd.DataFrame(
+        rows,
+        columns=["source", "target", "sign", "subtype", "target_type", "pathway"],
+    )
+    if not relations.empty:
+        relations = relations.drop_duplicates(
+            subset=["source", "target", "subtype"]
+        ).reset_index(drop=True)
+
+    logger.info(
+        f"Extracted {len(relations)} signaling relations from "
+        f"{len(pathway_ids)} KEGG pathways"
+    )
+    return relations
