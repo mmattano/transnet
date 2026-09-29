@@ -9,6 +9,7 @@ __all__ = [
     "Metabolite",
     "Gene",
     "Protein",
+    "SignalingProtein",
 ]
 
 class Reaction:
@@ -27,6 +28,7 @@ class Reaction:
             products: List[str] = None,
             stoichiometry_substrates: List[float] = None,
             stoichiometry_products: List[float] = None,
+            reversible: bool = True,
             ):
         self.id = id
         self.name = name
@@ -37,7 +39,11 @@ class Reaction:
         self.products = products if products is not None else []
         self.stoichiometry_substrates = stoichiometry_substrates if stoichiometry_substrates is not None else []
         self.stoichiometry_products = stoichiometry_products if stoichiometry_products is not None else []
-        
+        #: Whether the reaction can run in both directions.  KEGG writes most
+        #: equations with a reversible arrow, so this defaults to True; an
+        #: irreversible arrow in the source equation sets it to False.
+        self.reversible = reversible
+
     def __repr__(self):
         return f"<Reaction {self.id}: {self.name}>"
 
@@ -176,6 +182,10 @@ class Protein:
         # Interactions and related elements
         self.interaction_partners = []
         self.transcription_factor_targets = []
+        # {target gene symbol: mean ChIP-Atlas binding score}; populated
+        # alongside transcription_factor_targets and carried onto the
+        # transcriptional_regulation edges as `confidence`.
+        self.transcription_factor_target_scores = {}
         self.activators = []
         self.inhibitors = []
         self.substrates = []
@@ -184,4 +194,61 @@ class Protein:
         
     def __repr__(self):
         return f"<Protein {self.uniprot_id}: {self.name}>"
-        
+
+
+class SignalingProtein:
+    """A node in the signaling layer: a kinase, phosphatase or phosphosite.
+
+    The signaling layer sits at the top of the trans-omic hierarchy and is
+    optional -- many studies do not measure the phosphoproteome.  When it is
+    present it supplies the ``phosphorylation`` and ``kinase_tf`` edges that
+    let regulatory paths be traced from a stimulus down to metabolites.
+
+    Parameters
+    ----------
+    id : str
+        Node identifier, normally a UniProt accession, optionally suffixed with
+        a phosphosite (e.g. ``"P31749_S473"``).
+    name : str
+        Display name.
+    uniprot_id : str
+        Accession of the parent protein, used to link a phosphosite back to the
+        Proteome layer.
+    site : str
+        Modified residue, e.g. ``"S473"``.
+    sign : int
+        Direction of this node's regulatory effect on its targets: ``+1``
+        activating, ``-1`` inhibiting, ``0`` unknown.
+    """
+
+    def __init__(
+            self,
+            id: str = None,
+            name: str = None,
+            uniprot_id: str = None,
+            site: str = None,
+            sign: int = 0,
+            pathway: str = None,
+            evidence: str = None,
+            fc: float = None,
+            adj_p_value: float = None,
+            data: Any = None,
+            ):
+        self.id = id
+        self.name = name
+        self.uniprot_id = uniprot_id
+        self.site = site
+        self.sign = sign
+        self.pathway = pathway
+        self.evidence = evidence
+        self.fc = fc
+        self.adj_p_value = adj_p_value
+        self.data = data
+
+        #: Proteins this node phosphorylates.
+        self.substrates = []
+        #: Transcription factors this node regulates.
+        self.tf_targets = []
+
+    def __repr__(self):
+        return f"<SignalingProtein {self.id}: {self.name}>"
