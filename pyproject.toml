@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "transnet"
-version = "0.1.1"
+version = "0.2.0"
 description = "A package for trans-omics data integration and network analysis"
 readme = "README.md"
 authors = [
@@ -38,6 +38,7 @@ dependencies = [
     "zeep>=4.0.0",
     "biopython>=1.78",
     "pyensembl>=2.0.0",
+    "pyreadr>=0.4.7",    # MoTrPAC distributes its data as .rda
 ]
 
 [project.optional-dependencies]
@@ -52,12 +53,20 @@ viz = [
     "seaborn>=0.11.0",
     "plotly>=5.0.0",
 ]
+cache = [
+    "pyarrow>=8.0.0",  # parquet support for faster/smaller cache files
+]
 docs = [
     "Sphinx>=4.3.2",
-    "nbsphinx>=0.8.0",
+    "myst-nb>=1.0",      # renders the notebooks, executing them at build time
+    "jupytext>=1.15",    # reads notebooks/*.py as notebooks
+]
+notebooks = [
+    "jupytext>=1.15",
+    "jupyterlab>=4.0",
 ]
 all = [
-    "transnet[dev,viz,docs]",
+    "transnet[dev,viz,docs,cache,notebooks]",
 ]
 
 [project.urls]
@@ -76,7 +85,13 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+# Tests that hit live databases are excluded by default so the suite runs
+# offline and fast; run them with `pytest -m network`.
+addopts = "-v --tb=short -m 'not network'"
+markers = [
+    "network: requires live access to an external database (KEGG, UniProt, ...)",
+    "slow: runs a whole notebook end to end (about a minute for all of them)",
+]
 
 [tool.black]
 line-length = 100

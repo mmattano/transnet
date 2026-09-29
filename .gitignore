@@ -115,3 +115,56 @@ dmypy.json
 
 # Mac specific
 .DS_Store
+
+# ---------------------------------------------------------------------------
+# Generated data
+# ---------------------------------------------------------------------------
+# Downloaded source data and caches: regenerable, and large.
+data/raw/
+*.rda
+
+# Analysis outputs. The scripts in analyses/ write here; rerun them instead of
+# committing the results.
+data/demo_results/
+data/motrpac_results/
+data/mouse_results/
+data/published_results/
+
+# Cached networks: rebuild with maintenance/build_networks.py or the analysis
+# scripts' `network` stage.
+*.pkl
+
+# Built networks: data/<organism>/<date>/{nodes,interactions}.csv, plus the
+# "latest" symlink. Regenerable with `bash run_all.sh 2-6`, and far too large
+# for git -- the human interactions file alone is ~320 MB, over GitHub's 100 MB
+# per-file limit. Released separately instead; see the README for the link.
+data/*/20[0-9][0-9][0-9][0-9][0-9][0-9]/
+data/*/latest
+
+# Claude Code worktrees and session state
+.claude/worktrees/
+
+# NOT ignored, and deliberately so:
+#   data/example/                        bundled; every example and test needs it
+#   data/sample_data/experimental_data/  source data for analyses/mouse_transomics.py
+#   data/master_reactions.csv            the KEGG reaction table, reused to avoid
+#                                        ~12,000 REST calls on every network build
+
+# Run logs from run_all.sh
+logs/
+
+# Published datasets fetched at run time; distributed by their authors under
+# their own licences (e.g. GPL-3.0), so never committed to this MIT repository.
+data/published/
+
+# Build and editor leftovers
+*.egg-info/
+.DS_Store
+data/.checkpoints/
+
+# Notebook and study outputs (regenerable: make notebooks, make studies)
+notebooks/exports/
+notebooks/walkthroughs/exports/
+data/brown_adipocyte_results/
+data/oslo2/
+data/oslo2_results/
