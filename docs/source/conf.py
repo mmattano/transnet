@@ -1,56 +1,103 @@
 # Configuration file for the Sphinx documentation builder.
-#
-# This file only contains a selection of the most common options. For a full
-# list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
+import os
+import sys
 
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+# Document the package from the source tree, without requiring an install.
+sys.path.insert(0, os.path.abspath("../.."))
 
 
 # -- Project information -----------------------------------------------------
 
-project = "transnet"
-copyright = "2022, Matthias Mattanovich"
-author = "Matthias Mattanovich"
+project = "TransNet"
+copyright = "2026, Matthias Anagho-Mattanovich"
+author = "Matthias Anagho-Mattanovich"
 
-# The full version, including alpha/beta/rc tags
-release = "0.0.1"
+try:
+    from transnet import __version__ as release
+except Exception:                                   # pragma: no cover
+    release = "0.2.0"
+
+version = release
 
 
 # -- General configuration ---------------------------------------------------
 
-# Add any Sphinx extension module names here, as strings. They can be
-# extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
-# ones.
 extensions = [
-    "nbsphinx",
+    "myst_nb",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",       # NumPy-style docstrings
+    "sphinx.ext.viewcode",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
 ]
 
-# Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
+# The walkthroughs are jupytext scripts, not .ipynb: the .py file is the
+# source of truth, so there is no notebook output to keep in step with it.
+# The offline ones execute at build time (seconds, no network); the studies
+# need built networks and minutes, so they render from saved output.
+sys.path.insert(0, os.path.abspath("."))     # for _readers below
+nb_custom_formats = {".py": ["_readers.read", {}]}
+nb_execution_mode = "cache"
+nb_execution_timeout = 300
+# The studies need built networks and minutes of compute, so they are executed
+# once by `make studies` into docs/source/studies/*.ipynb, outputs included,
+# and rendered from those saved outputs rather than re-run here.
+nb_execution_excludepatterns = [
+    "studies/*",                    # executed by `make studies`, rendered as saved
+    "notebooks/studies/*",
+    "notebooks/extra/*",
+    "notebooks/walkthroughs/external_annotation.py",   # needs the network
+]
+myst_enable_extensions = ["colon_fence", "dollarmath"]
+# Interactive figures are the point of the interactive view, so prefer the
+# plotly output over its static fallback when rendering to HTML.
+nb_mime_priority_overrides = [
+    ("html", "application/vnd.plotly.v1+json", 10),
+    ("html", "text/html", 20),
+    ("html", "image/png", 30),
+]
 
-# List of patterns, relative to source directory, that match files and
-# directories to ignore when looking for source files.
-# This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = []
+exclude_patterns = [
+    "_build", "**.ipynb_checkpoints",
+    "_readers.py", "conf.py",
+    # The studies need built networks and minutes of compute; their narrative
+    # lives in the .rst pages beside them, with figures from a real run.
+    "notebooks/studies/*", "notebooks/extra/*", "notebooks/README.md",
+    "notebooks/exports/*",
+]
+
+# Sphinx should not import heavy optional database clients just to read a
+# docstring; the package imports fine without them, but the docs build should
+# not depend on them at all.
+autodoc_mock_imports = [
+    "bioservices", "mygene", "pyensembl", "zeep", "Bio",
+]
+
+autodoc_default_options = {
+    "members": True,
+    "undoc-members": False,
+    "show-inheritance": True,
+    "member-order": "bysource",
+}
+autodoc_typehints = "description"
+
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
+napoleon_use_rtype = False
+
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
+    "networkx": ("https://networkx.org/documentation/stable/", None),
+}
 
 
 # -- Options for HTML output -------------------------------------------------
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-#
 html_theme = "alabaster"
-
-# Add any paths that contain custom static files (such as style sheets) here,
-# relative to this directory. They are copied after the builtin static files,
-# so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
+html_title = "TransNet: trans-omics network analysis"
