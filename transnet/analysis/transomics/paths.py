@@ -1,0 +1,429 @@
+"""Signed regulatory-path tracing through the trans-omic hierarchy.
+
+A trans-omic network claims that a stimulus reaches a metabolite through a
+chain of regulatory steps.  This module enumerates those chains and checks them:
+multiply the signs along a path, compare the result with the metabolite's
+measured direction, and the path either explains the observation or it does not.
+
+The starting layer is inferred from the network unless you name one, so the same
+call works on a network with phosphoproteomics (paths start at ``Signaling``),
+one without (paths start at ``Proteome``), and a transcriptome-only network
+(paths start at ``Transcriptome``).
+
+References
+----------
+Kawata K, et al. Trans-omic Analysis Reveals Selective Responses to Induced and
+Basal Insulin across Signaling, Transcriptional, and Metabolic Networks. *iScience*
+7:212-229, 2018.
+
+Yugi K, et al. Trans-Omics: How To Reconstruct Biochemical Networks Across
+Multiple 'Omic' Layers. *Trends in Biotechnology* 34(4):276-290, 2016.
+"""
+
+from typing import Dict, List, Optional, Sequence
+
+import logging
+
+import pandas as pd
+
+from transnet.analysis.transomics.mapping import is_measured, is_responsive
+from transnet.biology.schema import (
+    CURRENCY_METABOLITES,
+    LAYER_HIERARCHY,
+    available_layers,
+    top_layer_present,
+)
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "trace_regulatory_paths",
+    "path_consistency_summary",
+]
+
+
+def _edge_records(graph, u, v) -> List[dict]:
+    """All edge attribute dicts between ``u`` and ``v``."""
+    data = graph.get_edge_data(u, v)
+    if data is None:
+        return []
+    if graph.is_multigraph():
+        return list(data.values())
+    return [data]
+
+
+def trace_regulatory_paths(
+    graph,
+    source_layer: Optional[str] = None,
+    target_layer: str = "Metabolome",
+    sources: Optional[Sequence[str]] = None,
+    targets: Optional[Sequence[str]] = None,
+    max_length: int = 6,
+    regulated_only: bool = True,
+    max_paths: int = 10000,
+    exclude_edge_types: Optional[Sequence[str]] = None,
+    exclude_nodes: Optional[Sequence[str]] = None,
+    allow_unchanged_intermediates: bool = False,
+) -> pd.DataFrame:
+    """Enumerate signed regulatory paths and score them against the data.
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        A trans-omic network, ideally directed.  An undirected graph is
+        accepted but direction cannot be enforced, and the result says so.
+    source_layer : str, optional
+        Layer paths start from.  ``None`` (default) infers the highest layer
+        present in the network -- see
+        :func:`~transnet.biology.schema.top_layer_present`.
+    target_layer : str
+        Layer paths end at.
+    sources, targets : sequence of str, optional
+        Explicit endpoint nodes, overriding the layer-based selection.
+    max_length : int
+        Maximum number of edges in a path.
+    regulated_only : bool
+        Restrict endpoints to nodes called regulated by
+        :func:`~transnet.analysis.transomics.mapping.map_omics_to_network`.
+        Set False to trace structural paths with no data mapped.
+    max_paths : int
+        Stop after this many paths, to bound the search on dense networks.
+    exclude_edge_types : sequence of str, optional
+        Relationships to walk around.  Defaults to ``("protein_interaction",)``:
+        a STRING association is undirected and unsigned, so it is not a
+        regulatory step, and on a real proteome its tens of thousands of edges
+        connect almost any protein to almost any other -- which both explodes
+        the search and makes the paths meaningless.  Pass an empty sequence to
+        keep every edge.
+    exclude_nodes : sequence of str, optional
+        Molecules to route around.  Defaults to
+        :data:`transnet.biology.schema.CURRENCY_METABOLITES`: a path that hops
+        through water or ATP connects two reactions that have nothing to do
+        with each other, and with cofactors in the graph almost every reaction
+        reaches almost every other.  Pass an empty sequence to keep them.
+
+        Note that excluded molecules cannot be path *endpoints* either; name
+        one explicitly in ``sources`` or ``targets`` and it is kept.
+    allow_unchanged_intermediates : bool
+        Keep paths that run through a molecule which *was measured and did not
+        change*.  Such a path is contradicted by the data it is scored
+        against: if the intermediate did not move, it passed nothing on, so
+        counting the path as an explanation of the endpoint inflates the
+        consistency rate.  Off by default; the count that was dropped is
+        logged, and the ``unchanged_intermediates`` column reports it per path
+        when this is switched on.  Unmeasured intermediates are kept either
+        way -- an unmeasured molecule is unknown, not unchanged.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per path:
+
+        ``source``, ``target``, ``path``, ``length``
+            The chain itself.
+        ``layers``, ``edge_types``
+            Which layers and relationships it crosses.
+        ``sign``
+            Product of the edge signs: whether the path passes a change on
+            unchanged (+1) or inverted (-1).
+        ``unsigned_steps``
+            Number of steps whose sign is unknown (e.g. ChIP-Atlas binding).
+            A path with unsigned steps predicts a direction only tentatively.
+        ``unchanged_intermediates``
+            Molecules on the path that were measured and did not change. Always
+            0 unless ``allow_unchanged_intermediates``.
+        ``source_regulated``
+            Measured direction of the source.
+        ``predicted``
+            ``sign * source_regulated``: the direction the path predicts for
+            the target. A *decreased* enzyme on a +1 path predicts a decrease.
+        ``observed``
+            Measured direction of the target.
+        ``consistent``
+            Whether ``predicted`` matches ``observed``. (This used to compare
+            ``sign`` with ``observed``, ignoring the source's direction, which
+            inverted the verdict for every path from a decreased molecule.)
+
+        Empty (with these columns) when either endpoint layer is absent.
+
+    Notes
+    -----
+    The inferred hierarchy is logged, so a run on a network without a Signaling
+    layer states plainly that paths begin at the next layer down.
+    """
+    columns = [
+        "source", "target", "path", "length", "layers", "edge_types",
+        "sign", "unsigned_steps", "unchanged_intermediates",
+        "source_regulated", "predicted", "observed", "consistent",
+    ]
+
+    layers_present = available_layers(graph)
+
+    if source_layer is None:
+        source_layer = top_layer_present(graph)
+        if source_layer is None:
+            logger.warning("Network has no recognised layers; cannot trace paths")
+            return pd.DataFrame(columns=columns)
+        if source_layer == target_layer:
+            # Nothing above the target layer to trace from.
+            higher = [
+                layer for layer in LAYER_HIERARCHY
+                if layer in layers_present and layer != target_layer
+            ]
+            if not higher:
+                logger.warning(
+                    f"Only layer present is '{target_layer}'; no regulatory "
+                    f"hierarchy to trace through"
+                )
+                return pd.DataFrame(columns=columns)
+            source_layer = higher[0]
+        logger.info(
+            f"No source layer given; tracing from '{source_layer}' "
+            f"(layers present: {layers_present})"
+        )
+
+    for layer, role in ((source_layer, "source"), (target_layer, "target")):
+        if layer not in layers_present:
+            logger.warning(
+                f"{role.capitalize()} layer '{layer}' absent from this network "
+                f"(present: {layers_present}); no paths to trace"
+            )
+            return pd.DataFrame(columns=columns)
+
+    def _endpoints(explicit, layer):
+        if explicit is not None:
+            return [n for n in explicit if n in graph]
+        nodes = [n for n, d in graph.nodes(data=True) if d.get("layer") == layer]
+        if regulated_only:
+            regulated = [n for n in nodes if is_responsive(graph.nodes[n])]
+            if regulated:
+                return regulated
+            logger.info(
+                f"No regulated nodes in '{layer}'; tracing structural paths instead"
+            )
+        return nodes
+
+    source_nodes = _endpoints(sources, source_layer)
+    target_nodes = _endpoints(targets, target_layer)
+
+    if not source_nodes or not target_nodes:
+        logger.warning("No endpoint nodes available for path tracing")
+        return pd.DataFrame(columns=columns)
+
+    if not graph.is_directed():
+        logger.warning(
+            "Graph is undirected; paths cannot respect regulatory direction. "
+            "Build the network with generate_graph(directed=True)."
+        )
+
+    target_set = set(target_nodes)
+    rows = []
+    blocked = 0
+
+    import networkx as nx
+
+    if exclude_edge_types is None:
+        exclude_edge_types = ("protein_interaction",)
+    excluded = set(exclude_edge_types)
+
+    if exclude_nodes is None:
+        exclude_nodes = CURRENCY_METABOLITES
+    # An endpoint the caller asked for by name is never routed around.
+    dropped_nodes = (
+        set(map(str, exclude_nodes))
+        - set(map(str, sources or ()))
+        - set(map(str, targets or ()))
+    )
+
+    if excluded:
+        keep = [
+            (u, v, key) for u, v, key, data in graph.edges(keys=True, data=True)
+            if (data.get("edge_type") or "unknown") not in excluded
+        ] if graph.is_multigraph() else [
+            (u, v) for u, v, data in graph.edges(data=True)
+            if (data.get("edge_type") or "unknown") not in excluded
+        ]
+        search = graph.edge_subgraph(keep).copy() if keep else graph.__class__()
+        removed = graph.number_of_edges() - search.number_of_edges()
+        if removed:
+            logger.info(
+                f"Excluding {removed:,} {sorted(excluded)} edge(s) from path "
+                f"tracing; they are associations rather than regulatory steps"
+            )
+    else:
+        search = graph
+
+    present = dropped_nodes & set(search.nodes)
+    if present:
+        search = search.copy()
+        search.remove_nodes_from(present)
+        logger.info(
+            f"Routing around {len(present)} currency metabolite(s); a path "
+            f"through water or ATP joins reactions that are unrelated"
+        )
+        source_nodes = [n for n in source_nodes if n in search]
+        target_nodes = [n for n in target_nodes if n in search]
+        target_set = set(target_nodes)
+        if not source_nodes or not target_nodes:
+            logger.warning(
+                "Every endpoint was a currency metabolite; pass exclude_nodes=() "
+                "to keep them"
+            )
+            return pd.DataFrame(columns=columns)
+    for source in source_nodes:
+        if len(rows) >= max_paths:
+            break
+        if source not in search:
+            continue
+        try:
+            walker = nx.all_simple_paths(
+                search, source, target_set, cutoff=max_length
+            )
+        except (nx.NodeNotFound, nx.NetworkXNoPath):
+            continue
+
+        for path in walker:
+            if len(rows) >= max_paths:
+                break
+
+            sign = 1
+            unsigned = 0
+            edge_types = []
+            ok = True
+
+            for u, v in zip(path[:-1], path[1:]):
+                records = _edge_records(search, u, v)
+                if not records:
+                    ok = False
+                    break
+                # Prefer the signed relationship where several connect the pair,
+                # since that is the one carrying regulatory meaning.
+                record = max(records, key=lambda r: abs(int(r.get("sign", 0) or 0)))
+                edge_sign = int(record.get("sign", 0) or 0)
+                edge_types.append(record.get("edge_type", "unknown"))
+                if edge_sign == 0:
+                    unsigned += 1
+                else:
+                    sign *= edge_sign
+
+            if not ok:
+                continue
+
+            # A molecule between the endpoints that was measured and did not
+            # move cannot have carried the change: the path is contradicted by
+            # its own data, not evidence for the endpoint.
+            unchanged = sum(
+                1 for node in path[1:-1]
+                if graph.nodes[node].get("layer") != "Reactions"
+                and is_measured(graph.nodes[node])
+                and not is_responsive(graph.nodes[node])
+            )
+            if unchanged and not allow_unchanged_intermediates:
+                blocked += 1
+                continue
+
+            target = path[-1]
+            observed = graph.nodes[target].get("regulated", 0) or 0
+            source_state = int(graph.nodes[source].get("regulated", 0) or 0)
+            predicted = sign * source_state
+            rows.append({
+                "source": source,
+                "target": target,
+                "path": " -> ".join(str(p) for p in path),
+                "length": len(path) - 1,
+                "layers": " -> ".join(
+                    str(graph.nodes[p].get("layer", "?")) for p in path
+                ),
+                "edge_types": " -> ".join(edge_types),
+                "sign": sign,
+                "unsigned_steps": unsigned,
+                "unchanged_intermediates": unchanged,
+                "source_regulated": source_state,
+                "predicted": predicted,
+                "observed": observed,
+                "consistent": bool(observed and predicted == observed),
+            })
+
+    table = pd.DataFrame(rows, columns=columns)
+
+    if blocked:
+        logger.info(
+            f"Dropped {blocked:,} path(s) running through a molecule that was "
+            f"measured and did not change; pass "
+            f"allow_unchanged_intermediates=True to keep them"
+        )
+
+    if not table.empty:
+        confident = table[table["unsigned_steps"] == 0]
+        logger.info(
+            f"Traced {len(table)} paths from {source_layer} to {target_layer}; "
+            f"{len(confident)} fully signed, "
+            f"{int(table['consistent'].sum())} consistent with the measured direction"
+        )
+    else:
+        logger.info(f"No paths found from {source_layer} to {target_layer}")
+
+    return table
+
+
+def path_consistency_summary(paths: pd.DataFrame) -> pd.DataFrame:
+    """Summarise traced paths by target molecule.
+
+    Parameters
+    ----------
+    paths : pandas.DataFrame
+        Output of :func:`trace_regulatory_paths`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Per target: how many paths reach it, how many are fully signed, how many
+        are consistent with its measured direction, and the shortest consistent
+        path -- the most parsimonious explanation the network offers.
+
+        ``predicted`` is what the network says about this molecule once its
+        paths are taken together: the direction most of them predict, or 0 when
+        they are evenly split. ``agrees`` compares that with the measurement.
+
+        These two columns are how a consistency rate should be quoted. Paths
+        are not independent observations -- one hub metabolite can be reached
+        by dozens of paths sharing most of their steps -- so a rate over paths
+        counts the same claim many times, while a rate over targets counts each
+        molecule once.
+    """
+    columns = [
+        "target", "observed", "n_paths", "n_fully_signed",
+        "n_consistent", "fraction_consistent", "predicted", "agrees",
+        "shortest_consistent_path",
+    ]
+    if paths.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows = []
+    for target, group in paths.groupby("target"):
+        consistent = group[group["consistent"]]
+        shortest = (
+            consistent.sort_values("length").iloc[0]["path"]
+            if not consistent.empty else ""
+        )
+        votes = group["predicted"]
+        up, down = int((votes > 0).sum()), int((votes < 0).sum())
+        predicted = 1 if up > down else -1 if down > up else 0
+        observed = group["observed"].iloc[0]
+        rows.append({
+            "target": target,
+            "observed": observed,
+            "n_paths": len(group),
+            "n_fully_signed": int((group["unsigned_steps"] == 0).sum()),
+            "n_consistent": len(consistent),
+            "fraction_consistent": len(consistent) / len(group),
+            "predicted": predicted,
+            "agrees": bool(observed and predicted == observed),
+            "shortest_consistent_path": shortest,
+        })
+
+    return (
+        pd.DataFrame(rows, columns=columns)
+        .sort_values("n_consistent", ascending=False)
+        .reset_index(drop=True)
+    )
