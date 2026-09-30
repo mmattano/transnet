@@ -5,7 +5,6 @@ function is renamed or removed, these tests fail rather than letting the
 documentation quietly describe an API that no longer exists.
 """
 
-import importlib
 import os
 import re
 
@@ -64,19 +63,19 @@ def test_catalogue_function_is_documented(name):
     assert len(function.__doc__.strip()) > 60, f"{name} has a stub docstring"
 
 
-@pytest.mark.parametrize(
-    "name", [n for names in CATALOGUE.values() for n in names]
-)
-def test_catalogue_function_cites_its_source(name):
-    """Each catalogue analysis names its literature, in the docstring or module."""
-    function = getattr(transnet, name)
-    text = function.__doc__ or ""
-    if "References" not in text:
-        module = importlib.import_module(function.__module__)
-        text = module.__doc__ or ""
-    assert "References" in text, (
-        f"{name} names no literature; add a References section to the function "
-        f"or its module so provenance is visible from help()"
+def _section(heading):
+    """The text of one catalogue section, from its heading to the next one."""
+    docs = _read("docs/source/transomics_analyses.rst")
+    match = re.search(rf"^{re.escape(heading)}\n-+\n(.*?)(?=^\S[^\n]*\n-{{3,}}\n|\Z)",
+                      docs, re.MULTILINE | re.DOTALL)
+    return match.group(1) if match else ""
+
+
+@pytest.mark.parametrize("analysis", sorted(CATALOGUE))
+def test_each_analysis_names_its_source(analysis):
+    """Provenance lives in the catalogue, one :Reference: field per analysis."""
+    assert ":Reference:" in _section(analysis), (
+        f"'{analysis}' in docs/source/transomics_analyses.rst names no reference"
     )
 
 
@@ -103,7 +102,7 @@ def test_no_analysis_is_referred_to_by_a_code():
     """The A1..A10 numbering is gone: names only, everywhere a reader looks."""
     for path in ("README.md", "docs/source/transomics_analyses.rst",
                  "docs/source/brown_adipocytes.rst", "docs/source/motrpac_study.rst",
-                 "docs/source/published_study.rst"):
+                 "docs/source/obese_liver_panel.rst"):
         found = re.findall(r"\bA\d+b?\b", _read(path))
         assert not found, f"{path} still refers to {sorted(set(found))}"
 

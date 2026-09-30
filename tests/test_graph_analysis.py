@@ -64,6 +64,24 @@ class TestOnADirectedMultigraph:
         for module in modules:
             assert set(module) <= set(mapped.nodes())
 
+    def test_active_modules_are_connected_and_cross_layers(self):
+        """Reactions carry no measurement, so growth has to step through them
+        to join an enzyme to its metabolites."""
+        from transnet import load_example_network, load_example_omics, map_omics_to_network
+
+        graph = load_example_network()
+        map_omics_to_network(graph, load_example_omics(), id_column="id",
+                             log2fc_column="log2FC", qvalue_column="padj")
+        largest = find_active_modules(graph, n_modules=1)[0]
+        assert nx.is_connected(graph.subgraph(largest).to_undirected())
+        assert {"Proteome", "Reactions", "Metabolome"} <= {
+            graph.nodes[n]["layer"] for n in largest}
+
+    def test_active_modules_leave_the_graph_alone(self, mapped):
+        before = {n: dict(d) for n, d in mapped.nodes(data=True)}
+        find_active_modules(mapped, score_attr="log2fc")
+        assert {n: dict(d) for n, d in mapped.nodes(data=True)} == before
+
 
 class TestPathLengthGuard:
     """Diameter is quadratic; an interactome would take hours."""

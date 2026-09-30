@@ -22,8 +22,12 @@ STUDIES = sorted((ROOT / "notebooks" / "studies").glob("*.py"))
 WALKTHROUGH_ORDER = [
     "build_network", "responsive_network", "reaction_regulation",
     "regulatory_paths", "temporal_and_hubs", "compare_conditions",
-    "network_topology", "transcription_factors", "external_annotation",
+    "network_topology", "export_network", "transcription_factors",
+    "external_annotation",
 ]
+
+#: Walkthroughs that call live databases, so they cannot run offline.
+NEEDS_NETWORK = {"external_annotation"}
 
 
 def test_every_walkthrough_has_a_place_in_the_order():
@@ -39,12 +43,14 @@ def test_the_documentation_lists_them_in_that_order():
 
 def test_the_studies_are_all_present():
     assert sorted(p.stem for p in STUDIES) == [
-        "brown_adipocytes", "kokaji_liver", "motrpac_rat", "obese_liver",
+        "brown_adipocytes", "liver_timecourse", "motrpac_rat", "obese_liver",
     ]
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("notebook", WALKTHROUGHS, ids=lambda p: p.stem)
+@pytest.mark.parametrize("notebook",
+                         [p for p in WALKTHROUGHS if p.stem not in NEEDS_NETWORK],
+                         ids=lambda p: p.stem)
 def test_walkthrough_runs_offline(notebook, tmp_path):
     environment = {**os.environ, "MPLBACKEND": "Agg"}
     result = subprocess.run([sys.executable, str(notebook)], cwd=tmp_path,
@@ -61,15 +67,3 @@ def test_notebook_parses_as_a_notebook(notebook):
     assert any(cell.cell_type == "markdown" for cell in parsed.cells), \
         f"{notebook.name} has no prose -- results need stating, not just printing"
 
-
-def test_the_collaborator_notebook_stops_without_data(tmp_path):
-    """It is meant to be sent to people who have data we do not: with none
-    present it must say exactly what is missing, not fail halfway."""
-    notebook = ROOT / "notebooks" / "extra" / "oslo2_breast_cancer.py"
-    environment = {**os.environ, "MPLBACKEND": "Agg",
-                   "OSLO2_DATA": str(tmp_path / "absent")}
-    result = subprocess.run([sys.executable, str(notebook)], cwd=tmp_path,
-                            capture_output=True, text=True, env=environment, timeout=300)
-    message = result.stdout + result.stderr
-    assert "transcriptome.csv" in message and "clinical.csv" in message
-    assert "Traceback" not in message.split("SystemExit")[0] or "Missing from" in message

@@ -172,6 +172,23 @@ class TestAxisSummary:
         )
         assert summary.iloc[0]["pathway"] == "glycolysis"
 
+    def test_a_reaction_in_several_pathways_counts_in_each(self, mapped_network):
+        table = reaction_regulation_table(mapped_network)
+        regulated = table[(table["gene_axis"] != 0) | (table["metabolite_axis"] != 0)]
+        reaction = regulated["reaction"].iloc[0]
+        summary = regulation_axis_summary(
+            table, pathway_map={reaction: ["glycolysis", "gluconeogenesis"]})
+        counts = summary.set_index("pathway")["n_reactions"]
+        assert counts["glycolysis"] == counts["gluconeogenesis"] == 1
+        assert counts["unassigned"] == len(regulated) - 1
+
+    def test_the_example_pathway_map_covers_every_reaction(self):
+        from transnet import load_example_network, load_example_pathways
+
+        reactions = {n for n, d in load_example_network().nodes(data=True)
+                     if d.get("layer") == "Reactions"}
+        assert reactions <= set(load_example_pathways())
+
     def test_empty_table_gives_empty_summary_with_columns(self):
         summary = regulation_axis_summary(pd.DataFrame())
         assert summary.empty

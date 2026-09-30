@@ -248,3 +248,57 @@ class TestBackboneKeepsTheSignalingLayer:
         selected = transomic_backbone(graph, max_reactions=8)
         assert selected.number_of_nodes() > 0
         assert "Signaling" not in self._layers(selected)
+
+
+class TestCommunityFigure:
+    def _figure(self, mapped, **kwargs):
+        from transnet.analysis import detect_communities
+        from transnet.visualization import plot_community_network
+
+        communities = detect_communities(mapped, method="louvain")
+        return plot_community_network(mapped, communities, **kwargs)
+
+    def test_the_drawn_community_is_labelled(self, mapped):
+        drawing = self._figure(mapped, label_top=5).axes[1]
+        assert 0 < len(drawing.texts) <= 5
+
+    def test_it_has_a_legend(self, mapped):
+        drawing = self._figure(mapped).axes[1]
+        entries = [t.get_text() for t in drawing.get_legend().get_texts()]
+        assert "increased" in entries and "decreased" in entries
+
+    def test_labels_can_be_switched_off(self, mapped):
+        assert not self._figure(mapped, label_top=0).axes[1].texts
+
+
+class TestControversialFigure:
+    """It used to call a helper that did not exist, which went unnoticed
+    because the walkthrough only ever passed it a table with no controversy."""
+
+    @staticmethod
+    def _mapped():
+        from transnet import load_example_network, load_example_omics
+
+        graph = load_example_network()
+        map_omics_to_network(graph, load_example_omics("insulin_sensitive"), id_column="id",
+                             log2fc_column="log2FC", qvalue_column="padj")
+        return graph
+
+    def test_draws_the_controversial_reactions(self):
+        from transnet.visualization import plot_controversial_reactions
+
+        graph = self._mapped()
+        table = reaction_regulation_table(graph)
+        assert table["controversial"].any()
+        figure = plot_controversial_reactions(graph, table)
+        assert figure.axes[0].patches
+
+    def test_contributions_are_signed_by_effect(self):
+        from transnet.visualization.findings import reaction_contributions
+
+        graph = self._mapped()
+        rows = reaction_contributions(graph, "R00299").set_index("role")
+        product_or_inhibitor = rows.loc[rows.index.isin(["product", "inhibitor"])]
+        assert (product_or_inhibitor["contribution"]
+                == -product_or_inhibitor["log2fc"]).all()
+        assert set(rows["axis"]) == {"enzyme", "metabolite"}

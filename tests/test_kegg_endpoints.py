@@ -60,3 +60,12 @@ def test_ec_to_compound_links_resolve():
 
     table = kegg_ec_to_cpds()
     assert not table.empty
+
+
+def test_reaction_pathways_resolve_for_an_organism(tmp_path, monkeypatch):
+    from transnet.api.kegg import kegg_reaction_pathways
+
+    monkeypatch.setenv("TRANSNET_KEGG_CACHE", str(tmp_path))
+    pathways = kegg_reaction_pathways(["R00200"], organism="mmu")
+    assert "Glycolysis / Gluconeogenesis" in pathways["R00200"]
+    assert not any(name.startswith("Metabolic pathways") for name in pathways["R00200"])

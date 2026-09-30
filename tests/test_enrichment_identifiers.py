@@ -550,3 +550,28 @@ class TestKeggTranscriptomeCarriesNcbiIds:
         edges = network.gene_protein_interaction()
 
         assert [(e["source"], e["target"]) for e in edges] == [("24152", "P16638")]
+
+
+def test_the_chip_atlas_experiment_list_is_downloaded_once(tmp_path, monkeypatch):
+    """It is 200 MB; three helpers read it, and each used to fetch it again.
+    The columns follow the real file: id, genome, antigen class, antigen, cell
+    type class, cell type."""
+    from transnet.api import chip_atlas
+
+    calls = []
+
+    class Response:
+        text = "SRX1\tmm10\tTFs and others\tFoxo1\tLiver\tHepatocytes\n"
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(*args, **kwargs):
+        calls.append(args)
+        return Response()
+
+    monkeypatch.setenv("TRANSNET_CHIP_CACHE", str(tmp_path))
+    monkeypatch.setattr(chip_atlas, "_get_with_retry", fake_get)
+    assert chip_atlas.list_ChIP_cell_type_classes("mm10") == ["Liver"]
+    assert chip_atlas.list_ChIP_cell_types("mm10", "Liver") == ["Hepatocytes"]
+    assert len(calls) == 1
