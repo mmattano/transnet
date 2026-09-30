@@ -4,10 +4,10 @@ Building a network for your organism
 ====================================
 
 Every study in this documentation maps its measurements onto a **reference
-network**: an organism-wide, typed, directed, signed graph assembled from public
-databases, built once and reused. The study supplies the data; the network
-supplies the wiring. This page describes how that network is made and how to
-make one for an organism TransNet does not already carry.
+network**: an organism-wide network assembled from public databases, built once
+and reused. The study supplies the data; the network supplies the connections.
+This page describes how the reference networks are built and updated, and how to
+build one for an organism TransNet does not yet include.
 
 Five are configured and built: human, mouse, rat, yeast and E. coli.
 
@@ -123,12 +123,11 @@ over 12,384 reactions, 8,233 proteins, 19,656 metabolites and 54,991 genes. This
 is the network :doc:`motrpac_study` maps six tissues onto.
 
 The one quirk is the comment in the entry. ChIP-Atlas carries only the ``rn6``
-assembly for rat, and only 52 factors on it. That single line is why the rat
-network's transcription-factor coverage is thin, and why the MoTrPAC study can
-test only 32 factors and finds none in four of its six tissues. A configuration
-choice made once, for a reason external to TransNet, shows up as a limit on a
-result four pages away. It is worth knowing which of your organism's numbers are
-like this.
+assembly for rat, with data for only 52 factors. This is why the rat network has
+few transcription-factor edges, and why the MoTrPAC study can test only 32
+factors and finds none in four of its six tissues. Limits like this come from
+the databases, not from the analysis, so it is worth checking which of your
+organism's results they affect.
 
 Adding another organism
 -----------------------
@@ -162,6 +161,8 @@ edge types no database supplies for the organism, so their absence is reported
 as expected rather than as a gap: E. coli declares
 ``transcriptional_regulation``, because ChIP-Atlas carries no bacterial genome.
 
+.. _build-report:
+
 Reading the build report
 ------------------------
 
@@ -186,32 +187,107 @@ flagged, because it almost always means the UniProt taxon is wrong rather than
 that the organism is small. Yeast once built with 43 proteins for exactly that
 reason, which is why its entry carries a ``uniprot_org`` override.
 
-Assembling a network in your own code
--------------------------------------
+.. _updating-networks:
 
-The builder is a script around the layer objects, and those can be used
-directly when you want a network that is not organism-wide:
+Updating the networks
+---------------------
+
+The organism networks are rebuilt by hand, not on a schedule. The databases
+change a few times a year, a build takes 30-90 minutes per organism, and a
+rebuilt network changes the numbers in every study, so an update should be a
+deliberate step that someone checks.
+
+To update one organism:
+
+1. Set the BRENDA credentials (free registration at brenda-enzymes.org):
+
+   .. code-block:: bash
+
+       export BRENDA_EMAIL='you@example.com' BRENDA_PASSWORD='...'
+
+2. Build it. The build saves checkpoints, so an interrupted build resumes where
+   it stopped:
+
+   .. code-block:: bash
+
+       make networks ORGANISMS=mouse
+       # the same as: python maintenance/build_networks.py --organisms mouse --brenda
+
+3. Read the build report printed at the end, and ``data/mouse/latest/summary.txt``.
+   A non-zero exit status means a layer or edge type is missing (see
+   :ref:`build-report` below).
+4. Rerun the studies that use the organism and refresh the documentation
+   figures:
+
+   .. code-block:: bash
+
+       make studies
+
+5. Check the numbers quoted on the study pages against the new notebook
+   output before committing.
+
+The networks are several hundred megabytes and can be rebuilt at any time, so
+they are not committed to the repository. ``data/<organism>/latest`` points to
+the most recent dated build, and older builds can be deleted.
+
+Assembling a network step by step
+---------------------------------
+
+``maintenance/build_networks.py`` is a script around the layer objects, which
+can also be used directly, for example to build a network that covers only part
+of an organism. Each step below calls one database and needs network access.
 
 .. code-block:: python
 
     from transnet import Transnet
-    from transnet.biology.layers import Proteome, Metabolome
+    from transnet.biology.layers import (
+        Metabolome, Pathways, Proteome, Reactions, Signaling, Transcriptome,
+    )
 
-    proteome = Proteome()
-    proteome.populate(kegg_organism="mmu", ncbi_organism="10090")
-    proteome.get_interaction_partners()          # STRING
-    proteome.get_transcription_factor_targets()  # ChIP-Atlas
-    proteome.get_brenda_kinetics()               # BRENDA effectors
+    # Reactions and compounds from KEGG
+    reactions = Reactions()
+    reactions.populate(from_api=True)          # every KEGG reaction equation
 
     metabolome = Metabolome()
-    metabolome.populate(kegg_organism="mmu", ncbi_organism="10090")
+    metabolome.populate()                      # every KEGG compound
+    metabolome.enrich_with_hmdb()              # optional: HMDB cross-references
 
-    network = Transnet(proteome=proteome, metabolome=metabolome,
-                       reactions=reactions)
+    # Proteins from UniProt, then their interactions and regulators
+    proteome = Proteome()
+    proteome.populate(kegg_organism="mmu", ncbi_organism="10090")
+    proteome.get_interaction_partners()        # STRING protein interactions
+    proteome.get_metabolites()                 # KEGG enzyme-compound links
+    proteome.get_transcription_factor_targets(genome_ChIP="mm10")   # ChIP-Atlas
+    proteome.get_brenda_kinetics(organism="Mus musculus")           # BRENDA effectors
+
+    # Genes from Ensembl, or from KEGG with kegg_api=True
+    transcriptome = Transcriptome()
+    transcriptome.populate(kegg_organism="mmu", organism_full="mus_musculus",
+                           ensembl=True)
+    transcriptome.fill_gene_info()             # KEGG gene names, when built from KEGG
+
+    # Optional layers
+    pathways = Pathways()
+    pathways.kegg_organism = "mmu"
+    pathways.populate()                        # KEGG pathways
+    pathways.fill_pathways()                   # their genes and compounds
+
+    signaling = Signaling()
+    signaling.populate(kegg_organism="mmu")    # kinase relations from KEGG KGML
+
+    network = Transnet(name="mouse", reactions=reactions, metabolome=metabolome,
+                       proteome=proteome, transcriptome=transcriptome,
+                       pathways=pathways, signaling=signaling)
     graph = network.generate_graph()
+    network.save_network("data/mouse/custom")
 
-``notebooks/walkthroughs/build_network.py`` shows the same object API on a
-network small enough to read.
+A Signaling layer can also be built from your own kinase-substrate table with
+``Signaling.populate_from_table``, and Reactome pathways can replace KEGG's with
+``Pathways.populate_from_reactome``. ``Pathways.over_representation_analysis``
+runs Reactome's enrichment test on a gene list.
+
+:doc:`notebooks/walkthroughs/build_network` shows the same object API on a
+network small enough to read, without any database calls.
 
 .. seealso::
 

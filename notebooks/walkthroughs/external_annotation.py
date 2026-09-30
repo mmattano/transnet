@@ -54,9 +54,10 @@ pathways.head(10)
 
 # %% [markdown]
 # `reactome_map_ids_to_pathways` answers the reverse question: which pathways
-# contain a given molecule. This is how a hub found by `transomic_hubs` gets a
-# name a biologist recognises. It resolves UniProt accessions, so it takes the
-# Proteome nodes rather than the Entrez-keyed Transcriptome ones.
+# contain a given molecule. It is useful for putting a name to a single
+# molecule that an analysis singled out, such as a cross-layer hub. It takes
+# UniProt accessions, so it is given the Proteome nodes rather than the
+# Entrez-keyed Transcriptome ones.
 
 # %%
 proteins = [n for n in regulated_nodes(graph)
@@ -83,6 +84,23 @@ if not catalogue.empty:
     inside.head(5)
 
 # %% [markdown]
+# `reactome_get_pathway_entities` lists the molecules in a pathway (proteins,
+# small molecules and complexes), and `reactome_get_pathway_hierarchy` returns
+# the tree that nests pathways inside larger ones.
+
+# %%
+from transnet.api import reactome_get_pathway_entities, reactome_get_pathway_hierarchy
+
+if not catalogue.empty:
+    entities = reactome_get_pathway_entities(catalogue.iloc[0]["stId"])
+    print(f"{len(entities)} molecules in {catalogue.iloc[0]['displayName']}")
+    entities.head(5)
+
+# %%
+tree = reactome_get_pathway_hierarchy(species="10090")
+print(f"{len(tree)} top-level branches in the mouse pathway hierarchy")
+
+# %% [markdown]
 # ## HMDB: the metabolite layer
 #
 # Metabolomics reports names, and names are ambiguous. `hmdb_search_metabolites`
@@ -105,6 +123,14 @@ if not found.empty:
     diseases = hmdb_get_diseases(found.iloc[0]["hmdb_id"])
     print(f"{len(diseases)} disease associations for {found.iloc[0]['name']}")
     diseases.head(8)
+
+# %%
+from transnet.api.hmdb import hmdb_get_metabolite, hmdb_get_pathways
+
+if not found.empty:
+    record = hmdb_get_metabolite(found.iloc[0]["hmdb_id"])
+    print(f"{len(record)} fields in the HMDB record")
+    hmdb_get_pathways(found.iloc[0]["hmdb_id"]).head(5)
 
 # %%
 from transnet.api import hmdb_map_ids
@@ -196,6 +222,22 @@ if have_credentials:
         print(f"{label:<11} {len(frame)}")
 
 # %% [markdown]
+# `brenda_enrich_proteins` works on `Protein` objects, as the network builder
+# does: it fetches the kinetic data for each protein's EC numbers and stores it
+# on the object. `BrendaClient` is the authenticated connection all of these
+# functions share; use it directly for a BRENDA query the helpers do not cover.
+
+# %%
+if have_credentials:
+    from transnet import Protein
+    from transnet.api import brenda_enrich_proteins
+
+    kinase = Protein(uniprot_id="P53657", name="Pklr", ec_number=[EC])
+    brenda_enrich_proteins([kinase], organism="Mus musculus")
+    print({field: len(getattr(kinase, field, None) or [])
+           for field in ("inhibitors", "activators", "substrates", "products", "cofactors")})
+
+# %% [markdown]
 # ## ChIP-Atlas: the transcription-factor edges
 #
 # `list_chip_tfs` is the set of factors with data for a genome, and
@@ -215,6 +257,45 @@ print(f"{len(available)} factors with mm10 data; Foxo1 present: "
 targets = get_chip_tf_targets(["Foxo1"], genome="mm10", distance=5, min_score=100)
 print(f"{len(targets)} Foxo1 target genes at a binding score of 100 or more")
 targets.head(8)
+
+# %% [markdown]
+# `get_ChIP_data` downloads the raw target table for a factor, one column per
+# ChIP-seq experiment, which `get_chip_tf_targets` summarises into one score per
+# gene. It returns the table, the experiments per factor, and the factors whose
+# download failed.
+
+# %%
+from transnet.api.chip_atlas import get_ChIP_data
+
+raw, experiments, failed = get_ChIP_data(genome="mm10", distance=5, proteins=["Foxo1"])
+print(f"{raw.shape[0]} genes, {raw.shape[1]} columns; "
+      f"{len(experiments.get('Foxo1', []))} Foxo1 experiments")
+raw.iloc[:5, :6]
+
+# %% [markdown]
+# ChIP-Atlas also records the cell type of every experiment.
+# `list_ChIP_cell_type_classes` and `list_ChIP_cell_types` list them, and
+# `get_ChIP_exps` lists the experiments, so the evidence for a factor's targets
+# can be restricted to a relevant tissue. All three read ChIP-Atlas's full
+# experiment list. It is a 200 MB download, stored in `~/.cache/transnet` and
+# reused afterwards, so the cell below runs only when the environment variable
+# `TRANSNET_LARGE_DOWNLOADS` is set.
+
+# %%
+if os.environ.get("TRANSNET_LARGE_DOWNLOADS"):
+    from transnet.api.chip_atlas import (
+        get_ChIP_exps,
+        list_ChIP_cell_type_classes,
+        list_ChIP_cell_types,
+    )
+
+    classes = list_ChIP_cell_type_classes(genome="mm10")
+    print(f"{len(classes)} cell-type classes, e.g. {', '.join(sorted(classes)[:5])}")
+    print(f"{len(list_ChIP_cell_types(genome='mm10', cell_type_class='Liver'))} "
+          f"liver cell types")
+    get_ChIP_exps(genome="mm10", cell_type_class="Liver").head(5)
+else:
+    print("set TRANSNET_LARGE_DOWNLOADS=1 to list ChIP-Atlas cell types and experiments")
 
 # %% [markdown]
 # ## KEGG: the signalling layer

@@ -1,10 +1,12 @@
 # %% [markdown]
 # # Transcription factors
 #
-# A changed transcript is an observation. The factor that changed it is an
-# inference, and it is the one cross-layer question a transcriptome alone cannot
-# answer. This walkthrough builds that inference from the network's
-# `transcriptional_regulation` edges and shows what it can and cannot support.
+# A changed transcript is measured. The transcription factor that changed it
+# is not, and has to be inferred. The network's `transcriptional_regulation`
+# edges say which factors bind near which genes, so a factor whose target genes
+# changed more than expected is a candidate driver of the response. This
+# walkthrough makes that inference and shows where it is reliable and where it
+# is not.
 
 # %%
 import matplotlib.pyplot as plt
@@ -53,9 +55,9 @@ pd.DataFrame(
 # 2. **Which way?** If its responsive targets moved mostly one way, that is the
 #    inferred activity, with a binomial test on the imbalance.
 #
-# `min_targets` sets how few measured targets is too few to test. Three is low
-# for a real network and appropriate here, where the example has four factors
-# with three targets each.
+# `min_targets` sets the smallest number of measured targets a factor needs to
+# be tested. The example has four factors with three targets each, so it is set
+# to 2 here; on an organism-wide network use a larger value.
 
 # %%
 activity = transcription_factor_activity(graph, min_targets=2)
@@ -65,21 +67,22 @@ activity[["name", "n_targets", "n_responsive_targets", "n_up", "n_down",
 # %% [markdown]
 # ## The factor that did not change
 #
-# `factor_regulated` is the factor's own measured direction. Foxo1 here has all
-# three of its targets down while its own level is unchanged, so an
-# expression-only reading of the proteome would call it inactive. Foxo1 is
-# regulated by phosphorylation, which moves it out of the nucleus without
-# changing how much of it there is. This is the usual case for signalling-
-# controlled factors, and inference from targets is what finds it.
+# `factor_regulated` is the factor's own measured change. All three Foxo1
+# targets went down while the amount of Foxo1 did not change, so looking at the
+# proteome alone would suggest Foxo1 was not involved. But Foxo1 is controlled
+# by phosphorylation, which moves it out of the nucleus without changing how
+# much of it there is. This is typical of factors controlled by signalling, and
+# inference from the targets is what detects it.
 
 # %%
 activity.set_index("name").loc[["Foxo1", "Srebf1"],
                                ["n_up", "n_down", "inferred_activity", "factor_regulated"]]
 
 # %% [markdown]
-# With four factors and three targets each, nothing survives correction
-# (q = 0.12 at best). The direction is still readable, and the figure shows both:
-# factors that pass are named in ink, the rest in grey.
+# With four factors and three targets each, no factor is significant after
+# correcting for multiple testing (the best q-value is 0.12). The inferred
+# direction can still be read. In the figure, significant factors are labelled
+# in black and the rest in grey.
 
 # %%
 from transnet.visualization import plot_tf_activity
@@ -90,14 +93,15 @@ plt.show()
 # %% [markdown]
 # ## Stricter targets
 #
-# `min_confidence` raises the ChIP-Atlas binding score a target must have, which
-# trades coverage for specificity. On an organism-wide network it is the main
-# control over how much of the transcriptome a factor appears to own.
+# `min_confidence` sets the minimum ChIP-Atlas binding score for a target to
+# count. A higher value keeps fewer, more reliable targets. On an
+# organism-wide network it is the main control over how many genes each factor
+# is assigned.
 #
-# The bundled example carries no binding scores, and an edge with no score
-# cannot meet a threshold, so asking for one here removes every edge. That is
-# the intended behaviour and worth seeing: a filtered result on an unscored
-# network is empty rather than unfiltered.
+# The bundled example has no binding scores, and an edge without a score cannot
+# pass a threshold, so any threshold removes every edge here. This is
+# deliberate: filtering a network that has no scores gives an empty result, not
+# an unfiltered one.
 
 # %%
 for threshold in (None, 100, 500):
@@ -110,20 +114,22 @@ for threshold in (None, 100, 500):
 # %% [markdown]
 # ## Where this breaks
 #
-# On an organism-wide network the test becomes too permissive in one direction
-# and too sparse in the other, and both failures appear in the studies:
+# On organism-wide networks the test fails in two opposite ways, and both
+# appear in the studies:
 #
-# * **Mouse.** ChIP-Atlas lists thousands of targets for a well-studied factor.
-#   When 6,175 transcripts respond, 225 of 703 factors reach q <= 0.05, which
-#   says more about target-list size than about the biology. The ranking is
-#   informative; the count is not.
-# * **Rat.** Only 32 factors have enough `rn6` coverage to be testable at all,
-#   and four of six MoTrPAC tissues implicate none.
+# * **Too many hits (mouse).** ChIP-Atlas lists thousands of targets for a
+#   well-studied factor. When 6,175 transcripts respond, 225 of 703 factors
+#   reach q <= 0.05. That number reflects the size of the target lists more
+#   than the biology. The ranking of factors is informative; the count is not.
+# * **Too few testable factors (rat).** Only 32 factors have enough ChIP-Atlas
+#   data for the rat genome (`rn6`) to be tested at all, and four of the six
+#   MoTrPAC tissues implicate none.
 #
-# Neither is a property of the method. Both are properties of the annotation, so
-# the honest reading states the coverage first. `notebooks/studies/kokaji_liver.py`
-# scores this inference against a published one on the same data, which is the
-# only way to know whether the ranking is right.
+# Both limits come from the annotation, not from the method, so report the
+# coverage alongside any result. The liver time-course study
+# (`notebooks/studies/liver_timecourse.py`) compares this inference with a
+# published one on the same data, which is the only way to check whether the
+# ranking is right.
 #
 # The live ChIP-Atlas calls that build these edges, `get_chip_tf_targets` and
 # `list_chip_tfs`, are in `external_annotation.py`, which needs the network.

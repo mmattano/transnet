@@ -3,14 +3,14 @@
 The trans-omics analysis catalogue
 ==================================
 
-Trans-omics is not multi-omics with more layers. Multi-omics integration asks
-which molecules co-vary across data types; trans-omics asks how a signal
-*propagates* through a biochemical network: which regulatory relationship
-carried it, in which direction, and whether the observed changes are consistent
-with that mechanism.
+Multi-omics integration usually asks which molecules change together across
+data types. Trans-omics asks how a change *travels* through the biochemical
+network: which regulatory relationship carried it, in which direction, and
+whether the measured changes are consistent with that mechanism.
 
-Trans-omics networks, largely defined by the Kuroda group, are built on one object: a typed,
-directed, signed regulatory hierarchy converging on the metabolic reaction.
+The approach was developed largely by the Kuroda laboratory. All its analyses
+work on one kind of network: layers of molecules joined by typed, directed and
+signed regulatory edges, which converge on the metabolic reactions.
 
 .. code-block:: text
 
@@ -95,20 +95,20 @@ function discovers what the network actually contains:
 * a table supplied for a layer the network lacks is reported in the mapping
   report, not raised.
 
-``notebooks/walkthroughs/regulatory_paths.py`` demonstrates this by running the same
-analysis twice, with and without the optional Signaling layer.
+:doc:`notebooks/walkthroughs/regulatory_paths` shows this by running the same
+analysis with and without the optional Signaling layer.
 
 
 Identifiers, and why the mapping report exists
 ----------------------------------------------
 
-Every layer of a network is IDed by one identifier -- Entrez for genes, UniProt
-for proteins, KEGG compound ids for metabolites -- while a real omics table is
-IDed by whatever the instrument and pipeline produced: Ensembl gene ids, RefSeq
-protein accessions, PubChem CIDs, RefMet names. Mismatch produces no error, only
-an analysis quietly computed over nothing. Use :func:`~transnet.map_omics_to_network`
-to get a coverage report and see which
-names in a layer are mapped poorly.
+Each layer of a network uses one kind of identifier: Entrez ids for genes,
+UniProt accessions for proteins, KEGG compound ids for metabolites. An omics
+table uses whatever the instrument and pipeline produced, such as Ensembl gene
+ids, RefSeq protein accessions, PubChem ids or metabolite names. A mismatch
+raises no error; the analysis simply runs on almost no data.
+:func:`~transnet.map_omics_to_network` therefore returns a report of how many
+rows of each table found a node, and which did not.
 
 Two helpers resolve the common cases without a database call:
 
@@ -133,8 +133,8 @@ Two helpers resolve the common cases without a database call:
 
         mapping = build_name_id_map(graph, metabolomics["feature"])
 
-A layer reported at 0 % is almost always an identifier-type mismatch, not due to
-a biological result.
+A layer reported at 0 % matched is almost always caused by an identifier
+mismatch, not by the biology.
 
 
 .. _network-reconstruction:
@@ -171,13 +171,16 @@ connectors.
 Reaction regulation-axis attribution
 ------------------------------------
 
-A reaction can be regulated through the *gene-expression axis*, meaning how much
-enzyme there is, or through the *metabolite axis*, meaning how hard that enzyme
-works. Both are regulation, they are measured in different layers, and they can
-disagree. Separating them is what most clearly distinguishes trans-omics from
-pathway enrichment. :ref:`Kokaji et al. <ref-kokaji2020>` found roughly half of all
-differentially regulated reactions in obese mouse liver receiving *opposing*
-input from the two axes. TransNet calls these **controversial** reactions.
+The rate of a reaction can change for two reasons. On the *gene-expression
+axis* (also called the enzyme axis) the amount of enzyme changes. On the
+*metabolite axis* the same amount of enzyme works faster or slower, because its
+substrates, products or allosteric regulators changed. The two axes are
+measured in different layers, and they can point in opposite directions.
+Separating them is what most clearly distinguishes trans-omics from pathway
+enrichment, which cannot say how a pathway was regulated.
+:ref:`Kokaji et al. <ref-kokaji2020>` found that roughly half of all regulated
+reactions in obese mouse liver received *opposing* input from the two axes.
+TransNet calls these **controversial** reactions.
 
 :func:`~transnet.reaction_regulation_table` returns one row per reaction:
 
@@ -283,27 +286,36 @@ trained muscle.
 Per-pathway regulation balance
 ------------------------------
 
-Two pathways can be equally "changed" and yet be changed by entirely different
-mechanisms, one transcriptionally and one allosterically. That distinction is
-what this reports. :func:`~transnet.regulation_axis_summary` rolls the
-regulation axes up per pathway: how many of a pathway's reactions each axis
-activates or inhibits, and what fraction is controversial.
-:func:`~transnet.visualization.plot_regulation_axes` draws it as the paired
-bar figure of :ref:`Kokaji et al. <ref-kokaji2020>`
+Two pathways can change equally much, but through different mechanisms: one
+through the amount of its enzymes, the other through its metabolites.
+:func:`~transnet.regulation_axis_summary` summarises the regulation axes per
+pathway: how many of a pathway's regulated reactions each axis activates or
+inhibits, and what fraction are controversial.
+:func:`~transnet.visualization.plot_regulation_axes` draws this as paired bar
+charts, in the style of :ref:`Kokaji et al. <ref-kokaji2020>`
+
+The summary needs to know which pathway each reaction belongs to.
+:func:`transnet.api.kegg_reaction_pathways` reads this from KEGG, restricted
+to the pathways present in one organism and without KEGG's overview maps. A
+reaction in several pathways is counted in each. The bundled example has its
+own map, :func:`~transnet.load_example_pathways`.
 
 .. code-block:: python
 
     from transnet import regulation_axis_summary
+    from transnet.api import kegg_reaction_pathways
     from transnet.visualization import plot_regulation_axes
 
-    summary = regulation_axis_summary(table, pathway_map=reaction_to_pathway)
+    pathways = kegg_reaction_pathways(table["reaction"], organism="mmu")
+    summary = regulation_axis_summary(table, pathway_map=pathways)
     plot_regulation_axes(summary)
 
-:Function: :func:`~transnet.regulation_axis_summary`
-:Needs: A regulation table from :ref:`the axis attribution <regulation-axes>`.
-   A pathway map gives per-pathway rows; without one the whole network is
-   summarised as a single row.
-:Example: ``notebooks/walkthroughs/reaction_regulation.py``
+:Function: :func:`~transnet.regulation_axis_summary`,
+   :func:`transnet.api.kegg_reaction_pathways`
+:Needs: A regulation table from :ref:`the axis attribution <regulation-axes>`
+   and a reaction-to-pathway map. Without a map, all reactions are summarised
+   in a single row.
+:Example: ``notebooks/walkthroughs/reaction_regulation.py``, and every study
 :Reference: :ref:`Egami et al. 2021 <ref-egami2021>`, Fig. 5
 
 
@@ -381,95 +393,17 @@ answer that looks like a negative result and is not one.
    edges are built, and logs any effector name it could not place. Matching the
    two directly would silently produce no allosteric edges at all.
 
-Tissues are compared this way rather than connected. Inter-organ networks
-(:ref:`Egami et al. 2021 <ref-egami2021>`) join tissues through circulating
-metabolites, which TransNet does not do.
+:func:`~transnet.visualization.plot_metabolite_regulators` shows the share
+of changed metabolites that are regulators beside the background share, and
+lists the regulators.
 
 :Function: :func:`~transnet.metabolite_regulatory_roles`,
    :func:`~transnet.regulatory_role_enrichment`
 :Needs: A Metabolome and a Reactions layer, plus BRENDA allosteric edges on the
    Proteome (:meth:`~transnet.biology.layers.Proteome.get_brenda_kinetics`, or
    ``build_networks.py --brenda``).
-:Function: :func:`~transnet.compare_transomic_networks`
-:Needs: Two networks built from the same reference, each with omics mapped on.
-:Example: ``notebooks/walkthroughs/compare_conditions.py``
-:Reference: :ref:`Egami et al. 2021 <ref-egami2021>`
+:Example: ``notebooks/walkthroughs/compare_conditions.py``, and every study
 :Reference: :ref:`Kokaji et al. 2020 <ref-kokaji2020>`
-
-
-.. _signal-flow:
-
-Signal flow through the hierarchy
----------------------------------
-
-A stimulus arrives at a receptor. Which metabolite concentrations does it
-reach, through which transcription factors and enzymes, and with what sign?
-
-No other analysis here spans the whole hierarchy.
-The Signaling layer sits above the Proteome and connects to it two ways:
-``phosphorylation`` for a kinase acting on a substrate protein, and
-``kinase_tf`` for a signalling protein acting on a transcription factor. With
-those edges present, a traced path runs receptor to metabolite in one object:
-
-.. code-block:: text
-
-    Insr -> Irs1 -> Pik3r1 -> Akt1 -| Foxo1 -> gene -> enzyme -> REACTION -> metabolite
-
-The layer comes from two sources, and they answer different questions.
-
-* :func:`transnet.api.kegg_signaling_relations` parses the KGML of an organism's
-  signal-transduction pathways into kinase-substrate and kinase-TF relations.
-  ``maintenance/build_networks.py --signaling`` adds them to a network. KEGG's
-  own subtype supplies the sign: ``activation`` is +1, ``inhibition`` -1, and a
-  plain ``phosphorylation`` is 0.
-* :func:`~transnet.map_modification_sites` attaches a study's *measured* sites.
-  Phosphoproteomics measures sites, not proteins, and a site regulates its
-  protein's activity rather than reporting how much of it there is, so each site
-  becomes its own Signaling node with an edge into the protein. Several sites on
-  one protein stay separate, because they can move in opposite directions. These
-  edges feed the phospho axis of
-  :ref:`reaction regulation axes <regulation-axes>`.
-
-:func:`~transnet.hierarchical_propagation` pushes seed scores *forward along
-directed, signed edges*, so a score arriving at a reaction through an inhibitor
-arrives negative.
-:func:`~transnet.downstream_influence` restricts the result to one layer and
-compares the predicted direction against measurement. Path tracing
-(:ref:`signed regulatory paths <signed-paths>`) answers the same question by
-enumerating routes instead, and the two disagree in a useful way: a target
-reached by many weak routes scores differently from one reached by a single
-strong route.
-
-Ordinary undirected random-walk-with-restart remains available in
-:func:`transnet.analysis.network_propagation.random_walk_with_restart` for
-diffusion-based similarity, which is a different question and has no direction.
-
-The signs earn their keep on the bundled example: 26 paths run from the
-insulin receptor to a metabolite and 14 pass through a ``kinase_tf`` step. All 14
-reach Srebf1; none reaches Foxo1, although Akt1 inhibits Foxo1 and that edge is
-in the network. Foxo1 was measured and did not change, so paths through it are
-contradicted by the data and dropped. The signed branch the data refuse is
-removed without anyone having to spot it.
-
-:func:`~transnet.visualization.plot_transomic_network` draws the
-Signaling layer as the top row when a network has one, and
-:func:`~transnet.visualization.transomic_backbone` walks up from each selected
-enzyme to the sites measured on it. Its ``max_signalling_per_enzyme`` governs how
-many, and 0 leaves the layer out.
-
-:Function: :func:`transnet.api.kegg_signaling_relations`,
-   :func:`~transnet.map_modification_sites`,
-   :func:`~transnet.hierarchical_propagation`,
-   :func:`~transnet.downstream_influence`
-:Needs: A Signaling layer, from KEGG KGML (``build_networks.py --signaling``)
-   or from measured modification sites. Reaching the metabolome also needs a
-   Proteome and a Reactions layer.
-:Example: ``notebooks/walkthroughs/regulatory_paths.py``;
-   ``notebooks/studies/motrpac_rat.py`` maps phosphosites from six tissues,
-   and :doc:`kokaji_study` has a signalling readout but no proteome, which is
-   what the layer needs to reach the enzyme axis.
-:Reference: :ref:`Yugi et al. 2016 <ref-yugi2016>` (kinase-substrate as one of
-   the five connection technologies), :ref:`Kawata et al. 2018 <ref-kawata2018>`
 
 
 .. _signed-paths:
@@ -477,59 +411,79 @@ many, and 0 leaves the layer out.
 Signed regulatory-path tracing
 ------------------------------
 
-Does the sign product along signal → TF → gene → enzyme → reaction → metabolite
-match the observed change? A network that claims a mechanism can be asked to
-predict, and the prediction can be wrong, which is what makes this a test rather
-than an illustration.
+Every edge in a TransNet network has a sign: +1 if more of the upstream
+molecule means more of the downstream one, -1 if it means less, and 0 if the
+effect is not known. Multiplying the signs along a chain of edges gives the
+sign of the whole chain. For example, ATP inhibits pyruvate kinase (-1) and
+pyruvate kinase produces pyruvate (+1), so the path ATP → pyruvate kinase →
+pyruvate has sign -1: more ATP should mean less pyruvate.
 
-:func:`~transnet.trace_regulatory_paths` enumerates
-directed paths through the typed graph, multiplies the edge signs, and compares
-the prediction with the target's measured direction. It reports
-``unsigned_steps`` separately, because a path through a ChIP-Atlas binding edge
-(where activation versus repression is unknown) predicts a direction only
-tentatively. :func:`~transnet.path_consistency_summary` gives the shortest
-consistent path per target, which is the most parsimonious explanation the network
-offers.
+This turns the network into something that makes predictions.
+:func:`~transnet.trace_regulatory_paths` follows directed paths from each
+changed molecule to a target layer, usually the metabolome, and predicts the
+target's direction as the path sign times the measured direction of the
+starting molecule. A *decreased* enzyme on a +1 path therefore predicts a
+decrease. Each prediction is then compared with the measurement. Because the
+prediction can be wrong, this is a test of the network, not an illustration.
 
-A path's prediction is its sign multiplied by the source's measured direction:
-a *decreased* enzyme on a +1 path predicts a decrease. (Earlier versions
-compared the bare path sign with the target, which inverted the verdict for
-every path starting from a decreased molecule.)
+Each row of the result is one path:
 
-Two rules keep the consistency rate meaning what it appears to mean:
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
 
-* A path through a molecule that *was measured and did not change* is dropped.
-  The data it is scored against contradict it: an intermediate that did not
-  move passed nothing on. Unmeasured intermediates are kept, since unmeasured
-  is unknown rather than unchanged. Pass
-  ``allow_unchanged_intermediates=True`` to trace structurally instead, as
-  ``notebooks/walkthroughs/regulatory_paths.py`` does when demonstrating sign propagation.
-* Quote the rate **per target molecule**, not per path.
-  :func:`~transnet.path_consistency_summary` gives one row per molecule with
-  the direction most of its paths predict (``predicted``) and whether that
-  matches the measurement (``agrees``). Paths are not independent observations:
-  in MoTrPAC skeletal muscle one hub metabolite was reached by dozens of paths
-  sharing most of their steps, and counting each path separately turned a
-  result that is not distinguishable from chance into "p = 4e-17".
+   * - Column
+     - Meaning
+   * - ``sign``
+     - product of the edge signs along the path
+   * - ``source_regulated``
+     - measured direction of the starting molecule
+   * - ``predicted``
+     - ``sign`` × ``source_regulated``: the direction predicted for the target
+   * - ``observed``
+     - measured direction of the target (0 = no significant change)
+   * - ``consistent``
+     - whether the prediction matches the measurement
+   * - ``unsigned_steps``
+     - edges with unknown sign, such as ChIP-Atlas binding edges; a path with
+       any of these is only a tentative prediction
 
-Two classes of edge make path tracing meaningless on a real network, and both
-are excluded by default:
+Two rules keep the result meaningful:
 
-* ``protein_interaction`` -- a STRING association is undirected and unsigned, so
-  it is not a regulatory step, and tens of thousands of them connect almost any
-  protein to almost any other. Override with ``exclude_edge_types=()``.
-* **currency metabolites** -- a path hopping through water or ATP joins two
-  reactions that have nothing to do with each other. Override with
-  ``exclude_nodes=()``, or name one in ``sources`` / ``targets`` to keep it as
-  an endpoint while still routing around it in the middle.
+* **Paths through unchanged molecules are dropped.** If a molecule in the
+  middle of a path was measured and did not change, it cannot have passed a
+  change on, so the data contradict the path. Molecules that were not measured
+  are kept, because there is no evidence either way.
+  ``allow_unchanged_intermediates=True`` switches this off, which is useful
+  only to show how signs combine.
+* **Report one verdict per target molecule, not per path.**
+  :func:`~transnet.path_consistency_summary` gives one row per molecule: the
+  direction most of its paths predict (``predicted``), whether that matches
+  (``agrees``), and the shortest path that predicts correctly. Paths are not
+  independent observations. In MoTrPAC skeletal muscle one metabolite was
+  reached by dozens of paths that shared most of their steps; counting each
+  path separately turned a result indistinguishable from chance into
+  p = 4e-17.
 
-On a real mouse network these two took the result from 8,454 paths -- almost all
-of them water-hops -- to 165, of which the shortest are the glycolytic chain:
-hexokinase to F6P to phosphofructokinase to F1,6BP.
+Two kinds of edge are skipped by default, because they connect almost
+everything to everything:
 
-``source_layer=None`` infers the highest layer present:
-Signaling when a phosphoproteome exists, otherwise Proteome, otherwise
-Transcriptome. The result reports the hierarchy used.
+* ``protein_interaction`` edges from STRING have neither direction nor sign,
+  so they are not regulatory steps. Include them with
+  ``exclude_edge_types=()``.
+* **Currency metabolites** such as water, ATP and NAD take part in hundreds of
+  reactions. A path through one of them joins two reactions that have nothing
+  else to do with each other. Include them with ``exclude_nodes=()``, or name
+  one in ``sources`` or ``targets`` to use it as an end point.
+
+On the organism-wide mouse network, these two rules reduced 8,454 paths,
+almost all of them passing through water, to 165. The shortest of those are the
+glycolytic chain: hexokinase → fructose 6-phosphate → phosphofructokinase →
+fructose 1,6-bisphosphate.
+
+Paths start at the highest layer the network contains: Signaling if a
+phosphoproteome was mapped, otherwise Proteome, otherwise Transcriptome.
+``source_layer`` overrides this.
 
 .. code-block:: python
 
@@ -539,13 +493,84 @@ Transcriptome. The result reports the hierarchy used.
     verdicts = path_consistency_summary(paths)      # one row per molecule
     verdicts["agrees"].sum(), (verdicts["predicted"] != 0).sum()
 
+:func:`~transnet.visualization.plot_regulatory_paths` draws the best-supported
+paths, one row each, with every molecule coloured by its measured change.
+
 :Function: :func:`~transnet.trace_regulatory_paths`,
    :func:`~transnet.path_consistency_summary`
-:Needs: Two measured layers with signed edges between them, and a target layer
-   to trace to. The starting layer is inferred from what is present.
-:Example: ``notebooks/walkthroughs/regulatory_paths.py``
+:Needs: Two measured layers with signed edges between them, and a target layer.
+:Example: :doc:`notebooks/walkthroughs/regulatory_paths`, and every study
 :Reference: :ref:`Kawata et al. 2018 <ref-kawata2018>`,
    :ref:`Yugi et al. 2016 <ref-yugi2016>`
+
+
+.. _signal-flow:
+
+Signal flow from a receptor, and propagation
+--------------------------------------------
+
+The Signaling layer sits above the Proteome. It holds kinases and other
+signalling proteins, joined to the proteome by two edge types:
+``phosphorylation`` (a kinase acting on another protein) and ``kinase_tf`` (a
+signalling protein acting on a transcription factor). With this layer, a single
+path can run from a hormone receptor to a metabolite:
+
+.. code-block:: text
+
+    Insr -> Irs1 -> Pik3r1 -> Akt1 -| Foxo1 -> gene -> enzyme -> REACTION -> metabolite
+
+The layer can come from two sources:
+
+* :func:`transnet.api.kegg_signaling_relations` reads KEGG's signalling
+  pathway maps, and ``maintenance/build_networks.py --signaling`` adds the
+  relations to a network. KEGG's annotation gives the sign: +1 for
+  activation, -1 for inhibition, and 0 for a phosphorylation whose effect is
+  not recorded.
+* :func:`~transnet.map_modification_sites` adds a study's *measured*
+  phosphorylation sites. Each site becomes its own Signaling node with an edge
+  to its protein, because several sites on one protein can move in opposite
+  directions. These edges also feed the phospho axis of the
+  :ref:`regulation-axis analysis <regulation-axes>`.
+
+On the bundled example, 26 paths run from the insulin receptor to a
+metabolite, and 14 of them pass through a ``kinase_tf`` step. All 14 reach
+Srebf1 and none reaches Foxo1, although Akt1 inhibits Foxo1 and the edge is in
+the network. The reason is the first rule above: Foxo1 was measured and did not
+change, so every path through it is contradicted by the data and dropped.
+
+Path tracing lists individual routes. **Propagation** answers the same
+question with a single score per molecule.
+:func:`~transnet.hierarchical_propagation` starts from the measured changes and
+pushes them forward along directed, signed edges, adding up what arrives at
+each molecule; a score that passes an inhibiting edge arrives negative. A
+molecule reached by many weak routes and one reached by a single strong route
+then get different scores, which path tracing cannot express.
+:func:`~transnet.downstream_influence` keeps one layer, adds the measured
+direction and marks whether each prediction agrees;
+:func:`~transnet.visualization.plot_downstream_influence` plots predicted
+score against measured direction.
+
+Use path tracing to name the mechanism behind one change, and propagation to
+get a predicted direction for every molecule in a layer.
+:func:`transnet.analysis.network_propagation.random_walk_with_restart` is a
+different tool: it spreads scores without regard to direction or sign, to find
+what lies *near* a set of molecules.
+
+:func:`~transnet.visualization.plot_transomic_network` draws the Signaling
+layer as the top row when the network has one.
+
+:Function: :func:`transnet.api.kegg_signaling_relations`,
+   :func:`~transnet.map_modification_sites`,
+   :func:`~transnet.hierarchical_propagation`,
+   :func:`~transnet.downstream_influence`
+:Needs: For signal flow, a Signaling layer, from KEGG
+   (``build_networks.py --signaling``) or from measured phosphorylation sites.
+   Reaching the metabolome also needs a Proteome and a Reactions layer.
+   Propagation works from any layer.
+:Example: :doc:`notebooks/walkthroughs/regulatory_paths`;
+   :doc:`motrpac_study` maps phosphorylation sites from six tissues.
+:Reference: :ref:`Yugi et al. 2016 <ref-yugi2016>`,
+   :ref:`Kawata et al. 2018 <ref-kawata2018>`
 
 
 .. _cross-layer-connectivity:
@@ -553,9 +578,9 @@ Transcriptome. The result reports the hierarchy used.
 Cross-layer connectivity
 ------------------------
 
-A network that is 95 % within-layer edges is a stack of separate single-omics
-networks wearing one name. This is how to find that out before drawing
-conclusions from it.
+If 95 % of a network's edges run within a layer, it is in effect a set of
+separate single-omics networks, and trans-omic conclusions drawn from it are
+weak. This analysis measures that before any conclusions are drawn.
 
 :func:`~transnet.cross_layer_connectivity` returns
 the layer × layer edge-count matrix, a per-relationship breakdown, per-layer
@@ -629,9 +654,9 @@ tests the architecture:
 
 * Spearman correlation of degree against t½. A negative value means hubs lead
   the response;
-* the distribution of correlations between *connected* molecules, bimodal near
-  ±0.75 says the network is coherently driven, unimodal near zero says it is
-  not;
+* the distribution of correlations between the time courses of *connected*
+  molecules. Two peaks near ±0.75 mean that connected molecules move together
+  (or exactly opposite); a single peak near zero means they do not;
 * median response time per layer, showing the order in which layers move.
 
 :func:`~transnet.split_by_response_class` splits the network into fast/slow and
@@ -685,17 +710,15 @@ did not change is regulated post-translationally.
     tf[["name", "n_responsive_targets", "n_up", "n_down",
         "q_value", "inferred_activity", "factor_regulated"]]
 
-On the bundled mouse time course this finds Esrra (targets 499 down, 181 up,
-the factor itself down), Rxra (targets down, factor level unchanged -- the
-signature of a ligand-activated receptor) and the Polycomb components Suz12,
-Eed and Rnf2 (targets up while Suz12 and Eed fall: loss of repression).
+:func:`~transnet.visualization.plot_tf_activity` ranks the factors by
+significance and shows the direction of their targets.
 
 :Function: :func:`~transnet.transcription_factor_activity`
 :Needs: Transcriptome measurements and ``transcriptional_regulation`` edges,
    genome-wide. A targeted gene panel carries too few targets per factor to
    test, and ChIP-Atlas coverage varies sharply by organism.
 :Example: ``notebooks/walkthroughs/transcription_factors.py``;
-   :doc:`kokaji_study` scores the inference against a published one.
+   :doc:`liver_timecourse` scores the inference against a published one.
 :Reference: :ref:`Kokaji et al. 2022 <ref-kokaji2022>`,
    :ref:`Maehara et al. 2025 <ref-maehara2025>`
 
@@ -736,10 +759,10 @@ its regulation was transcriptional.
     result = expression_concordance(graph)
     result["counts"], result["correlation"]
 
-mRNA explains only part of protein variation, so a large protein-only class is
-expected biology -- and the class a transcriptome-only study attributes to
-nothing. On the mouse time course gene and protein fold changes correlate at
-rho = 0.12, and 212 pairs move in opposite directions.
+mRNA levels explain only part of the variation in protein levels, so a large
+protein-only class is normal biology. A transcriptome-only study cannot see
+this class at all. :func:`~transnet.visualization.plot_expression_concordance`
+plots protein against transcript change, coloured by category.
 
 :Function: :func:`~transnet.expression_concordance`
 :Needs: Transcriptome and Proteome measurements on the same samples. Standard
@@ -802,26 +825,21 @@ ask of itself:
     layers within a group, real when the pairing is confirmed; ``single-layer``
     ones are not joint at all.
 
-The first version of the pairing check correlated transcript with protein
-*across genes within a sample*. That measures gene abundance, which is the same
-whatever the pairing, and on data centred per feature -- MoTrPAC's -- it sees
-nothing: it called MoTrPAC, whose layers are keyed by animal, unpaired. The
-per-gene version passes MoTrPAC (p = 0.002), which is its validation, and
-confirms the brown adipocyte pairing too (p = 0.002). On the Uematsu panel,
-with 17 genes in both layers, it leans the right way without reaching
-significance.
+The pairing check confirms the pairing of MoTrPAC, whose layers are keyed by
+animal (p = 0.002), and of the brown adipocyte data (p = 0.002). On the Uematsu
+panel, with only 17 genes measured in both layers, it points the right way
+without reaching significance.
 
-Two earlier versions of the propagation reading were wrong in instructive
-ways. Ranking nodes by raw diffused score returned water and ADP for every
-factor, since a hub collects score from any seed set. And a "concentration"
-statistic compared against uniformly drawn seeds measured how well connected
-the seeds were rather than anything about the factor. Both are fixed by the
-two rules above, and on the brown adipocyte data the result is informative:
-four of five factors have cross-layer overlap two to three times the null
-(q = 0.025), and the strongest lands on branched-chain amino acid catabolism
-(*Bckdhb*, 3-hydroxyisobutyrate) beside the complex III assembly factor
-*Uqcc4* -- a known thermogenic fuel in brown fat, found from the wiring rather
-than from a pathway list.
+On the brown adipocyte data, four of five factors have a cross-layer overlap
+two to three times the null (q = 0.025). The strongest lands on
+branched-chain amino acid breakdown (*Bckdhb*, 3-hydroxyisobutyrate) beside
+the complex III assembly factor *Uqcc4*. Branched-chain amino acids are a known
+fuel for heat production in brown fat, and here they were found from the
+network rather than from a pathway list.
+
+:func:`~transnet.visualization.plot_factor_overview`,
+:func:`~transnet.visualization.plot_factor_scores` and
+:func:`~transnet.visualization.plot_factor_network` draw these readings.
 
 :Function: :func:`~transnet.analysis.factors.fit_factors` and the
    ``factor_*`` readings above
@@ -840,11 +858,10 @@ than from a pathway list.
 Regulatory motifs
 -----------------
 
-A pathway diagram asserts that hexokinase is
-inhibited by its own product. A typed, directed, signed graph lets you *find*
-that, and everything shaped like it, without being told where to look: a
-reaction whose product carries an inhibiting edge back to it is product
-inhibition, wherever it occurs. On the bundled example the search returns
+A pathway diagram tells you that hexokinase is inhibited by its own product.
+In a typed, directed, signed network such patterns can be *found*, wherever
+they occur, without knowing in advance where to look: any reaction whose
+product has an inhibiting edge back to that reaction is product inhibition. On the bundled example the search returns
 hexokinase inhibited by glucose-6-phosphate and pyruvate dehydrogenase
 inhibited by acetyl-CoA, neither of them named anywhere in the code.
 
@@ -881,10 +898,11 @@ feed-forward instances on one mouse dataset and no information.
 Structural vulnerability
 ------------------------
 
-A cut vertex -- a molecule whose removal splits
-its component -- is meaningless for a list and central for a network. In a
-trans-omic network these are the places where one layer's response reaches
-another through a single route.
+A *cut molecule* (in graph terms, a cut vertex) is a molecule whose removal
+splits the network into separate pieces. In a trans-omic network these are the
+places where the response in one layer reaches another through a single route:
+if that molecule were missing, or its enzyme inhibited, the pieces would no
+longer be connected.
 
 :func:`~transnet.structural_vulnerability` ranks
 the cut molecules of the responsive network by how much of it they strand:
@@ -906,22 +924,22 @@ holding together a quarter of the response.
 Convergence against a null model
 --------------------------------
 
-"A changed enzyme and a changed metabolite meet
-at this reaction" is the claim the whole catalogue rests on, and it needs a
-baseline: a network with this many changed molecules produces some convergence
-for free.
+Many analyses in this catalogue rest on reactions where a changed enzyme and
+a changed metabolite meet. Some such meetings are expected by chance alone: if
+many molecules change, and some reactions have many connections, changed
+molecules will sometimes land on the same reaction.
 
-:func:`~transnet.convergence_significance` holds
-the network and the number of changed molecules per layer fixed, shuffles
-*which* molecules changed, and recounts. It returns the observed count, the
-null mean, a z-score and a permutation p-value, plus the null distribution so
-it can be drawn.
+:func:`~transnet.convergence_significance` measures how many meetings chance
+would produce. It keeps the network and the number of changed molecules in
+each layer fixed, reassigns at random which molecules count as changed, and
+counts again, many times. It returns the real count, the mean of the random
+counts, a z-score and a p-value, and the random counts themselves, which
+:func:`~transnet.visualization.plot_convergence_null` draws as a histogram.
 
-On the brown adipocyte study, 170 reactions carry both axes against a null of
-19 (z = +4.4, p = 0.015): the convergence is a property of the response, not of
-the network's degree distribution. On the Uematsu panel, 14 against 6.3
-(z = +1.9, p = 0.05) -- real, but close enough to the boundary that the number
-matters.
+On the brown adipocyte study, 170 reactions have both axes changed, against 19
+expected by chance (z = +4.4, p = 0.015): the layers converge far more than
+chance would produce. On the Uematsu panel the numbers are 14 against 6.3
+(z = +1.9, p = 0.05), which is only just significant.
 
 :Function: :func:`~transnet.convergence_significance`
 :Needs: A Reactions layer with a measured enzyme layer and a Metabolome. The
@@ -955,7 +973,7 @@ one per analysis, beside the table it came from.
    * - :func:`~transnet.visualization.plot_controversial_reactions`
      - reaction regulation axes -- the tug-of-war, per enzyme
    * - :func:`~transnet.visualization.plot_regulation_axes`
-     - per-pathway balance -- per-pathway balance
+     - per-pathway balance -- which axis activates or inhibits each pathway
    * - :func:`~transnet.visualization.plot_metabolite_regulators`
      - metabolite regulatory roles -- changed metabolites that act on an enzyme
    * - :func:`~transnet.visualization.plot_regulatory_paths`
@@ -989,9 +1007,13 @@ one per analysis, beside the table it came from.
    * - :func:`~transnet.visualization.plot_factor_network`
      - factors -- a factor's top loadings placed on the network
    * - :func:`~transnet.visualization.plot_community_network`
-     - communities, and whether they span layers
+     - communities, whether they span layers, and one community drawn with
+       labels
    * - :func:`~transnet.visualization.plot_network_metrics`
-     - degree distribution and component sizes
+     - degree distribution, component sizes and molecules per layer
+
+To save any figure, or the network itself, in another format, see
+:doc:`notebooks/walkthroughs/export_network`.
 
 Colours come from one validated palette (:mod:`transnet.visualization.palette`):
 red and blue only ever mean direction, layers and axes take hues that are neither.
@@ -999,12 +1021,17 @@ red and blue only ever mean direction, layers and axes take hues that are neithe
 Statistics reported against a baseline
 --------------------------------------
 
-A share of correct directional predictions (signed regulatory paths, influence) is compared with the
-50% a coin flip achieves, with a binomial test; an enrichment (metabolite regulatory roles, transcription-factor activity) is
-reported as not over-represented when its test says so. Hubs (trans-omic hubs) are ranked by
-degree *within the responsive network*, as :ref:`Morita et al. <ref-morita2025>` define them: over the
-whole network, transcription factors with thousands of ChIP-Atlas targets
-dominate regardless of the data.
+Every result is reported against what chance would give:
+
+* **Directional predictions** (signed paths, propagation): the share of
+  correct predictions is compared with the 50 % expected from guessing up or
+  down at random, using a binomial test (:func:`transnet.analysis.versus_chance`).
+* **Enrichments** (metabolite regulatory roles, transcription-factor
+  activity): the result states when the test finds no over-representation.
+* **Hubs** are ranked among the molecules that responded, following
+  :ref:`Morita et al. <ref-morita2025>` Over the whole network, transcription
+  factors with thousands of ChIP-Atlas targets would rank highest whatever the
+  data.
 
 .. _comparing-conditions:
 
@@ -1018,4 +1045,17 @@ network comparison reports which nodes and edges differ; this reports which
 transcriptional arm but keeps its allosteric one is a different biological story
 from the reverse, and only an edge-type-aware comparison distinguishes them.
 
-:Example: ``notebooks/walkthroughs/compare_conditions.py``
+It also lists the molecules that changed in both conditions but in opposite
+directions, which a comparison of two gene lists would count as agreement.
+:func:`~transnet.visualization.plot_condition_comparison` draws both.
+
+Tissues are compared this way, as separate networks, rather than connected.
+Inter-organ networks (:ref:`Egami et al. 2021 <ref-egami2021>`) join tissues
+through circulating metabolites, which TransNet does not do.
+
+:Function: :func:`~transnet.compare_transomic_networks`
+:Needs: Two networks built from the same reference, each with omics mapped on.
+:Example: ``notebooks/walkthroughs/compare_conditions.py``;
+   :doc:`motrpac_study` (six tissues) and :doc:`liver_timecourse` (two
+   genotypes)
+:Reference: :ref:`Egami et al. 2021 <ref-egami2021>`

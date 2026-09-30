@@ -22,78 +22,69 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEST = ROOT / "docs" / "source" / "figures"
 
+#: Per study: the folder under docs/source/figures, the folder the notebook
+#: writes to, and the figures the study page shows (published name, file
+#: relative to the output folder).
+STUDIES = {
+    # notebooks/studies/brown_adipocytes.py
+    "brown_adipocytes": ("data/brown_adipocyte_results", [
+        "network.png", "layer_connectivity.png", "communities.png",
+        "axis_composition.png", "regulation_axes.png", "controversial_reactions.png",
+        "concordance.png", "tf_activity.png", "metabolite_regulators.png",
+        "transomic_hubs.png", "downstream_influence.png", "temporal_structure.png",
+        "early_vs_late.png", "regulatory_paths.png", "regulatory_motifs.png",
+        "convergence_null.png", "structural_vulnerability.png",
+        ("factor_scores.png", "factors/factor_scores.png"),
+        ("factor_overview.png", "factors/factor_overview.png"),
+        ("network_Factor3.png", "factors/network_Factor3.png"),
+    ]),
+    # notebooks/studies/motrpac_rat.py
+    "motrpac": ("data/motrpac_results/transomics", [
+        "network_SKM_GN.png", "layer_connectivity.png", "axes_by_tissue.png",
+        "modification_sites.png", "phospho_axis.png",
+        ("regulatory_paths.png", "paths_SKM_GN.png"),
+        "concordance_SKM_GN.png", "edge_jaccard.png", "cross_tissue_changes.png",
+        "regulation_axes_SKM_GN.png", "controversial_SKM_GN.png",
+        "metabolite_regulators_SKM_GN.png", "tf_activity_SKM_GN.png",
+        "downstream_influence_SKM_GN.png", "transomic_hubs_SKM_GN.png",
+        "closest_tissues.png", "temporal_structure_SKM_GN.png",
+        "regulatory_motifs_SKM_GN.png", "convergence_null_SKM_GN.png",
+        "structural_vulnerability_SKM_GN.png",
+        ("factor_overview.png", "factors/SKM_GN/factor_overview.png"),
+        ("factor_scores.png", "factors/SKM_GN/factor_scores.png"),
+        ("network_Factor5.png", "factors/SKM_GN/network_Factor5.png"),
+        ("network_Factor6.png", "factors/SKM_GN/network_Factor6.png"),
+    ]),
+    # notebooks/studies/obese_liver.py -- figures of results computed here; the
+    # Uematsu data they derive from is never redistributed.
+    "obese_liver_panel": ("data/published_results/obese_liver", [
+        "network.png", "layer_connectivity.png", "regulation_axes.png",
+        "controversial_reactions.png", "metabolite_regulators.png", "concordance.png",
+        "transomic_hubs.png", "downstream_influence.png", "regulatory_paths.png",
+        "axes_by_contrast.png",
+        ("factor_scores.png", "factors/factor_scores.png"),
+        ("network_Factor1.png", "factors/network_Factor1.png"),
+        ("network_Factor4.png", "factors/network_Factor4.png"),
+    ]),
+    # notebooks/studies/liver_timecourse.py -- figures of results computed here;
+    # the Kokaji supplement they derive from is never redistributed.
+    "liver_timecourse": ("data/published_results/liver_timecourse", [
+        "network_WT.png", "network_obob.png", "layer_connectivity.png",
+        "metabolites_over_time.png", "gene_overlap.png", "axes_by_genotype.png",
+        "controversial_WT.png", "regulation_axes_WT.png", "regulation_axes_obob.png",
+        "metabolite_regulators.png", "saturation.png", "tf_activity.png",
+        "temporal_structure.png", "transomic_hubs.png", "regulatory_paths.png",
+        "downstream_influence.png", "convergence_null.png", "regulatory_motifs.png",
+        "structural_vulnerability.png", "genotypes_compared.png",
+    ]),
+}
+
 #: published path -> where the analysis writes it.
 FIGURES = {
-    # notebooks/studies/brown_adipocytes.py
-    "brown_adipocytes/network.png": "data/brown_adipocyte_results/network.png",
-    "brown_adipocytes/regulation_axes.png": "data/brown_adipocyte_results/regulation_axes.png",
-    "brown_adipocytes/concordance.png": "data/brown_adipocyte_results/concordance.png",
-    "brown_adipocytes/regulatory_paths.png":
-        "data/brown_adipocyte_results/regulatory_paths.png",
-    "brown_adipocytes/regulatory_motifs.png":
-        "data/brown_adipocyte_results/regulatory_motifs.png",
-    "brown_adipocytes/convergence_null.png":
-        "data/brown_adipocyte_results/convergence_null.png",
-    "brown_adipocytes/structural_vulnerability.png":
-        "data/brown_adipocyte_results/structural_vulnerability.png",
-    "brown_adipocytes/factor_scores.png": "data/brown_adipocyte_results/factors/factor_scores.png",
-    "brown_adipocytes/factor_overview.png":
-        "data/brown_adipocyte_results/factors/factor_overview.png",
-    "brown_adipocytes/network_Factor3.png":
-        "data/brown_adipocyte_results/factors/network_Factor3.png",
-    # notebooks/studies/motrpac_rat.py
-    "motrpac/network_SKM_GN.png":
-        "data/motrpac_results/transomics/network_SKM_GN.png",
-    "motrpac/axes_by_tissue.png": "data/motrpac_results/transomics/axes_by_tissue.png",
-    "motrpac/modification_sites.png":
-        "data/motrpac_results/transomics/modification_sites.png",
-    "motrpac/regulatory_paths.png":
-        "data/motrpac_results/transomics/paths_SKM_GN.png",
-    "motrpac/phospho_axis.png": "data/motrpac_results/transomics/phospho_axis.png",
-    "kokaji/saturation.png": "data/published_results/kokaji_liver/saturation.png",
-    "motrpac/concordance_SKM_GN.png":
-        "data/motrpac_results/transomics/concordance_SKM_GN.png",
-    "motrpac/edge_jaccard.png": "data/motrpac_results/transomics/edge_jaccard.png",
-    "motrpac/factor_overview.png":
-        "data/motrpac_results/transomics/factors/SKM_GN/factor_overview.png",
-    "motrpac/factor_scores.png":
-        "data/motrpac_results/transomics/factors/SKM_GN/factor_scores.png",
-    "motrpac/network_Factor5.png":
-        "data/motrpac_results/transomics/factors/SKM_GN/network_Factor5.png",
-    "motrpac/network_Factor6.png":
-        "data/motrpac_results/transomics/factors/SKM_GN/network_Factor6.png",
-    "motrpac/cross_tissue_changes.png":
-        "data/motrpac_results/transomics/cross_tissue_changes.png",
-    # notebooks/studies/obese_liver.py -- our own figures of our own computed
-    # results; the Uematsu data they are derived from is never redistributed.
-    "published/concordance.png": "data/published_results/obese_liver/concordance.png",
-    "published/regulatory_paths.png":
-        "data/published_results/obese_liver/regulatory_paths.png",
-    "published/network.png": "data/published_results/obese_liver/network.png",
-    "published/axes_by_contrast.png": "data/published_results/obese_liver/axes_by_contrast.png",
-    "published/factor_scores.png":
-        "data/published_results/obese_liver/factors/factor_scores.png",
-    "published/network_Factor1.png":
-        "data/published_results/obese_liver/factors/network_Factor1.png",
-    "published/network_Factor4.png":
-        "data/published_results/obese_liver/factors/network_Factor4.png",
-    # notebooks/studies/kokaji_liver.py -- our figures of our own results; the
-    # Kokaji supplement they derive from is never redistributed.
-    "kokaji/network_WT.png": "data/published_results/kokaji_liver/network_WT.png",
-    "kokaji/network_obob.png": "data/published_results/kokaji_liver/network_obob.png",
-    "kokaji/axes_by_genotype.png":
-        "data/published_results/kokaji_liver/axes_by_genotype.png",
-    "kokaji/regulatory_paths.png":
-        "data/published_results/kokaji_liver/regulatory_paths.png",
-    "kokaji/convergence_null.png":
-        "data/published_results/kokaji_liver/convergence_null.png",
-    "kokaji/regulatory_motifs.png":
-        "data/published_results/kokaji_liver/regulatory_motifs.png",
-    "kokaji/metabolite_regulators.png":
-        "data/published_results/kokaji_liver/metabolite_regulators.png",
-    "kokaji/tf_activity.png": "data/published_results/kokaji_liver/tf_activity.png",
-    "kokaji/genotypes_compared.png":
-        "data/published_results/kokaji_liver/genotypes_compared.png",
+    f"{folder}/{entry if isinstance(entry, str) else entry[0]}":
+        f"{source}/{entry if isinstance(entry, str) else entry[1]}"
+    for folder, (source, entries) in STUDIES.items()
+    for entry in entries
 }
 
 

@@ -1,35 +1,33 @@
 # %% [markdown]
-# # Kokaji liver: a genome-wide glucose response, in two genotypes
+# # Obese liver after a glucose load: a genome-wide time course
 #
-# Wild-type and leptin-deficient obese (ob/ob) mouse liver, sampled at 0, 20,
-# 60, 120 and 240 minutes after an oral glucose bolus. The transcriptome covers
-# 14,292 genes and the metabolome 162 compounds, both with the authors' own fold
-# changes, q-values and half-response times, and eleven signalling proteins were
-# measured by western blot.
+# **Question.** How does the liver's response to glucose differ between lean
+# and obese mice, genome-wide and over time, and which regulatory mechanisms
+# carry each response?
 #
-# `obese_liver.py` scores three claims from this study on a 19-gene panel at one
-# timepoint and has to mark them "not reproduced here". This notebook uses the
-# study's own data, so the same claims can be tested with the right instrument.
+# **Data.** Wild-type and leptin-deficient obese (ob/ob) mouse liver, sampled
+# at 0, 20, 60, 120 and 240 minutes after an oral glucose load. The
+# transcriptome covers 14,292 genes and the metabolome 162 compounds, each with
+# the authors' own fold changes, q-values and half-response times. The
+# measurements were published by Kokaji *et al.*, *Science Signaling*
+# 13(660):eaaz1236, 2020. They are downloaded when the notebook runs and are
+# never redistributed.
 #
-# Two things here exist nowhere else in this documentation: the transcription
-# factor inference is scored against a published inference on the same data, and
-# the metabolite axis is made quantitative with measured enzyme affinities.
-#
-# The measurements belong to Kokaji *et al.*, *Science Signaling*
-# 13(660):eaaz1236, 2020. They are downloaded at run time into a directory that
-# is not part of this repository and never redistributed.
+# The panel study (`obese_liver.py`) could check three claims of this paper only
+# partly, on 19 genes at one time point. Here they are tested on the data they
+# were made from. Two analyses appear only in this study: the
+# transcription-factor inference is compared with the authors' own inference on
+# the same data, and measured enzyme affinities show whether a metabolite's
+# change can matter to its enzyme at all.
 
 # %%
 import json
 import warnings
-from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 from transnet import (
-    build_name_id_map,
     compare_transomic_networks,
     convergence_significance,
     cross_layer_connectivity,
@@ -45,7 +43,6 @@ from transnet import (
     structural_vulnerability,
     trace_regulatory_paths,
     transcription_factor_activity,
-    transomic_hubs,
 )
 from transnet.analysis import hub_rankings, path_verdicts, versus_chance
 from transnet.datasets import (
@@ -59,7 +56,7 @@ from transnet.io import read_network
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-OUT = DATA_DIR / "published_results" / "kokaji_liver"
+OUT = DATA_DIR / "published_results" / "liver_timecourse"
 OUT.mkdir(parents=True, exist_ok=True)
 TIMEPOINT = 240
 LOG2FC_THRESHOLD = 0.585        # 1.5-fold, as the Kuroda laboratory defines it
@@ -73,20 +70,25 @@ print(f"{network.number_of_nodes():,} molecules, "
       f"{network.number_of_edges():,} relationships")
 
 # %%
+from transnet.visualization import plot_layer_connectivity
+
 connectivity = cross_layer_connectivity(network)
 print(f"{connectivity['cross_layer_fraction']:.0%} of edges cross between layers")
-connectivity["matrix"]
+layer_figure = plot_layer_connectivity(connectivity,
+                                       title="Mouse network: edges between layers")
+plt.show()
 
 # %% [markdown]
 # ## The contrasts
 #
-# Nothing is recomputed. The supplement gives a fold change, p-value and q-value
-# per timepoint per genotype, so the contrast is read off it and converted from a
-# ratio to log2. What differs between this analysis and the paper is the network
-# reading, not the statistics.
+# No statistics are recomputed. The supplement gives a fold change, p-value
+# and q-value per time point and genotype, so each contrast is read from it and
+# the ratio converted to log2. The analysis differs from the paper only in what
+# is done with the network, not in the statistics. The main contrast is 240
+# minutes against 0 minutes.
 #
-# Metabolites arrive with KEGG compound ids, which is unusual and useful: no name
-# matching is needed for the layer that name matching usually limits.
+# The metabolites come with KEGG compound ids, which the network also uses, so
+# no name matching is needed.
 
 # %%
 contrasts = {}
@@ -105,16 +107,59 @@ pd.DataFrame([
 ]).set_index(["genotype", "layer"])
 
 # %% [markdown]
-# The first result is visible before any network: at 240 minutes the wild-type
-# metabolome moves more than the obese one (36 metabolites against 11), while the
-# obese transcriptome moves more than the wild-type one (552 genes against 425).
-# That is the paper's headline, and it comes out of the raw contrast.
+# The first result is visible before any network is used: at 240 minutes more
+# metabolites change in wild-type than in obese liver, and more genes change in
+# obese than in wild-type liver. This is the paper's main finding, and it is
+# already in the raw numbers.
+#
+# ## The response over time
+#
+# The same comparison at every time point. Each column is one genotype at one
+# time point; each row is a metabolite that changed at some time point. Rows are
+# sorted by their largest change.
+
+# %%
+from transnet.visualization import plot_similarity_heatmap, plot_values_heatmap
+
+over_time, changed_sets = {}, {}
+for genotype in ("WT", "ob/ob"):
+    for minutes in KOKAJI_TIMEPOINTS:
+        column = f"{genotype} {minutes} min"
+        for layer, sheet in (("Metabolome", "S1"), ("Transcriptome", "S4")):
+            contrast = kokaji_contrast(sheet, genotype, minutes)
+            hit = contrast[(contrast["padj"] <= QVALUE_THRESHOLD)
+                           & (contrast["log2FC"].abs() >= LOG2FC_THRESHOLD)]
+            changed_sets.setdefault(layer, {})[column] = set(hit["feature"])
+            if layer == "Metabolome":
+                over_time[column] = contrast.set_index("feature")["log2FC"]
+
+values = pd.DataFrame(over_time)
+values = values.loc[values.index.isin(set().union(*changed_sets["Metabolome"].values()))]
+timecourse_figure = plot_values_heatmap(values, graph=network, max_rows=35,
+                                        title="Changed metabolites, by genotype and time")
+plt.show()
+
+# %% [markdown]
+# How similar are the responses? The Jaccard index of two sets of changed genes
+# is the number they share divided by the number in either: 1 means the same
+# genes changed, 0 means none in common.
+
+# %%
+columns = list(changed_sets["Transcriptome"])
+jaccard = pd.DataFrame(
+    [[len(changed_sets["Transcriptome"][a] & changed_sets["Transcriptome"][b])
+      / max(len(changed_sets["Transcriptome"][a] | changed_sets["Transcriptome"][b]), 1)
+      for b in columns] for a in columns],
+    index=columns, columns=columns)
+similarity_figure = plot_similarity_heatmap(
+    jaccard, title="Overlap of the changed genes between time points and genotypes")
+plt.show()
 
 # %% [markdown]
 # ## Identifiers
 #
-# Genes are Ensembl and the network is keyed by Entrez. The map is thousands of
-# lookups, so it is cached.
+# Genes are identified by Ensembl ids and the network uses Entrez ids.
+# Translating them takes thousands of lookups, so the result is cached.
 
 # %%
 def cached_map(name, features, from_type, to_type):
@@ -164,8 +209,9 @@ layer_coverage(graphs["WT"])
 # ## Which axis regulates each reaction
 #
 # There is no proteome here, so the enzyme axis rests on transcripts alone.
-# `gene_axis_evidence` records that, and it is why these counts are not
-# comparable with a study that measured proteins.
+# `gene_axis_evidence` records this (`gene` rather than `gene_protein`), and it
+# is why these counts cannot be compared directly with a study that measured
+# proteins.
 
 # %%
 regulation, rows = {}, []
@@ -191,10 +237,10 @@ axes = pd.DataFrame(rows).set_index("genotype")
 axes
 
 # %% [markdown]
-# This is the claim the paper is built on, and the 19-gene panel in
-# `obese_liver.py` could not test it: healthy liver answers glucose through
-# metabolites, obese liver through gene expression. Here the whole liver is
-# available and the two axes can be counted in each genotype.
+# This is the claim the paper is built on: healthy liver responds to glucose
+# through its metabolites, obese liver through gene expression. The 19-gene
+# panel could only test it partly. Here the whole liver is available and the two
+# axes can be counted in each genotype.
 
 # %%
 from transnet.visualization import plot_axis_composition
@@ -211,11 +257,49 @@ plot_axis_composition(composition)
 plt.show()
 
 # %% [markdown]
-# ## Per-pathway balance, and the metabolites doing the regulating
+# ### The controversial reactions
+#
+# Where the two axes point in opposite directions. Each bar is one measured
+# molecule's push on the reaction: to the right it speeds the reaction up, to
+# the left it slows it down.
 
 # %%
-pd.concat([regulation_axis_summary(t).assign(genotype=g)
-           for g, t in regulation.items()]).set_index("genotype")
+from transnet.visualization import plot_controversial_reactions
+
+controversial_figures = {}
+for genotype, graph in graphs.items():
+    table = regulation[genotype]
+    print(f"{genotype}: {int(table['controversial'].sum())} controversial reactions")
+    controversial_figures[genotype] = plot_controversial_reactions(
+        graph, table, max_enzymes=5,
+        title=f"{genotype} liver: controversial reactions")
+    plt.show()
+
+# %% [markdown]
+# ## Per-pathway balance, and the metabolites doing the regulating
+#
+# `kegg_reaction_pathways` assigns each reaction to its mouse KEGG pathways, and
+# `regulation_axis_summary` counts, per pathway, the reactions each axis
+# activates or inhibits. The figures show the pathways with the most regulated
+# reactions in each genotype.
+
+# %%
+from transnet.api import kegg_reaction_pathways
+from transnet.visualization import plot_regulation_axes
+
+reactions = [n for n, d in network.nodes(data=True) if d.get("layer") == "Reactions"]
+pathways = kegg_reaction_pathways(reactions, organism="mmu")
+balance = {genotype: regulation_axis_summary(table, pathway_map=pathways)
+           for genotype, table in regulation.items()}
+pd.concat([b.assign(genotype=g) for g, b in balance.items()]).set_index("genotype").head(12)
+
+# %%
+axis_figures = {}
+for genotype, summary in balance.items():
+    top = summary[summary["pathway"] != "unassigned"].head(12)
+    axis_figures[genotype] = plot_regulation_axes(
+        top, title=f"{genotype} liver, 240 min after glucose: regulation by pathway")
+    plt.show()
 
 # %%
 role_rows = []
@@ -349,16 +433,17 @@ regulated_with_kinetics.sort_values("shift", key=abs, ascending=False).head(10)
 # %% [markdown]
 # ## Transcription factors, against a published inference
 #
-# Every other transcription-factor result in this documentation is unvalidated:
-# the ranking looks plausible and nothing says whether it is right. Here the
-# authors inferred factors from the same transcriptome by motif enrichment over
-# gene clusters (Table S7), so the two inferences can be compared.
+# Elsewhere in this documentation there is nothing to check the
+# transcription-factor ranking against. Here the authors inferred factors from
+# the same transcriptome by motif enrichment over gene clusters (Table S7), so
+# the two inferences can be compared.
 #
-# They are not the same method. Motif enrichment asks which sequences are
-# over-represented in a cluster's promoters; `transcription_factor_activity` asks
-# which ChIP-Atlas-bound target sets are over-represented among responsive genes.
-# Agreement between two different methods on one dataset is worth more than
-# either alone.
+# The methods differ. Motif enrichment asks which DNA sequence motifs are
+# over-represented in the promoters of a gene cluster.
+# `transcription_factor_activity` asks which factors' ChIP-Atlas target genes
+# are over-represented among the genes that changed. When two different
+# methods agree on the same data, that agreement is stronger evidence than
+# either result alone.
 
 # %%
 activity = {}
@@ -410,9 +495,10 @@ sorted(ours_implicated & their_factors)
 # %% [markdown]
 # ## Timing, against the authors' own half-response times
 #
-# Every other timing result here uses half-response times this package computed.
-# The supplement distributes them, per genotype, for both layers, so the
-# degree-versus-timing question can be asked with the paper's own numbers.
+# The other studies compute half-response times with TransNet. This supplement
+# provides the authors' own, per genotype and for both layers, so the question
+# of whether well-connected molecules respond first can be asked with the
+# paper's numbers.
 
 # %%
 timing = []
@@ -429,8 +515,8 @@ pd.DataFrame(timing).set_index(["genotype", "layer"])
 
 # %% [markdown]
 # Morita *et al.* report that in healthy liver the best-connected molecules
-# respond first, and that the relationship is lost in obesity. The same test, on
-# the authors' t-half values and this network's degrees:
+# respond first, and that this relationship is lost in obesity. The same test,
+# on the authors' half-response times and this network's connections:
 
 # %%
 from scipy import stats
@@ -454,6 +540,29 @@ for genotype, graph in graphs.items():
 pd.DataFrame(degree_timing).set_index(["genotype", "layer"])
 
 # %% [markdown]
+# `temporal_network_structure` runs the same test once the half-response times
+# are stored on the network's nodes, and `plot_temporal_structure` draws it.
+
+# %%
+from transnet import temporal_network_structure
+from transnet.visualization import plot_temporal_structure
+
+timed_graph = graphs["WT"].copy()
+for layer, sheet in (("Metabolome", "S1"), ("Transcriptome", "S4")):
+    contrast = kokaji_contrast(sheet, "WT", TIMEPOINT)
+    if "t_half" not in contrast:
+        continue
+    for feature, t_half in zip(contrast["feature"], contrast["t_half"]):
+        node = id_map[layer].get(feature, feature)
+        if node in timed_graph and pd.notna(t_half):
+            timed_graph.nodes[node]["t_half"] = float(t_half)
+timing_structure = temporal_network_structure(timed_graph)
+print(timing_structure["degree_vs_thalf"]["interpretation"])
+timing_figure = plot_temporal_structure(timed_graph, timing_structure, time_unit="min",
+                                        title="Wild-type liver: connections against timing")
+plt.show()
+
+# %% [markdown]
 # ## Hubs
 
 # %%
@@ -466,11 +575,18 @@ for genotype, graph in graphs.items():
 hub_tables["WT"].head(10)[["name", "layer", "cross_layer_degree",
                            "n_layers_touched"]]
 
+# %%
+from transnet.visualization import plot_transomic_hubs
+
+hub_figure = plot_transomic_hubs(hub_tables["WT"], title="Wild-type liver: molecules "
+                                                          "connecting layers")
+plt.show()
+
 # %% [markdown]
 # ## Signed paths and propagation
 
 # %%
-traced, traced_paths, path_rows = {}, {}, []
+traced, traced_paths, influences, path_rows = {}, {}, {}, []
 for genotype, graph in graphs.items():
     paths = trace_regulatory_paths(graph, target_layer="Metabolome", max_length=4,
                                    max_paths=20000)
@@ -481,6 +597,7 @@ for genotype, graph in graphs.items():
              if d.get("layer") == "Transcriptome" and d.get("regulated")
              and d.get("log2fc") is not None}
     influence = downstream_influence(graph, seeds, target_layer="Metabolome")
+    influences[genotype] = influence
     measured = influence[influence["observed"].fillna(0) != 0]
     agree = int(measured["agrees"].astype("boolean").fillna(False).sum())
     path_rows.append({
@@ -502,15 +619,21 @@ for genotype, (summary, agree_paths, tested_paths) in traced.items():
           f"correctly: {versus_chance(agree_paths, tested_paths)}")
 
 # %% [markdown]
-# 5,788 paths reach the metabolome in wild-type liver and none of them scores a
-# changed metabolite, so the figure shows what the paths predict with no
-# measurement to check it against. That is the honest picture of a layer whose
-# coverage runs out.
+# Thousands of paths reach the metabolome, but only 162 metabolites were
+# measured, so few paths end at a metabolite whose change can be checked. The
+# path figure therefore mostly shows predictions without a measurement to test
+# them against. Propagation gives every measured metabolite a predicted
+# direction, and `plot_downstream_influence` compares it with the measurement.
 
 # %%
-from transnet.visualization import plot_regulatory_paths
+from transnet.visualization import plot_downstream_influence, plot_regulatory_paths
 
 paths_figure = plot_regulatory_paths(traced_paths["WT"], graphs["WT"], top_n=8)
+plt.show()
+
+# %%
+influence_figure = plot_downstream_influence(
+    influences["WT"], title="Wild-type liver: metabolites predicted from the transcripts")
 plt.show()
 
 # %% [markdown]
@@ -535,9 +658,10 @@ for genotype, graph in graphs.items():
 pd.DataFrame(wiring).set_index("genotype")
 
 # %% [markdown]
-# The convergence null, drawn. Wild-type liver has no proteome here, so the
-# enzyme side of a convergence is never measured and the count is 0 by
-# construction rather than by measurement.
+# The convergence test counts reactions where a changed *protein* and a
+# changed metabolite meet. This study has no proteome, so the count is 0 by
+# construction, not because the layers fail to converge. The figure is shown
+# for completeness.
 
 # %%
 from transnet.visualization import (
@@ -555,6 +679,16 @@ plt.show()
 motif_figure = plot_regulatory_motifs(
     regulatory_motifs(graphs["WT"], responsive_only=True),
     title="Wild-type liver: regulatory motifs")
+plt.show()
+
+# %% [markdown]
+# The molecules whose removal would split the wild-type response into separate
+# pieces.
+
+# %%
+vulnerability_figure = plot_structural_vulnerability(
+    structural_vulnerability(responsive_subnetwork(graphs["WT"]), top_n=10),
+    title="Wild-type liver: molecules that hold the response together")
 plt.show()
 
 # %% [markdown]
@@ -579,10 +713,10 @@ comparison_figure = plot_condition_comparison(comparison, "WT", "ob/ob")
 plt.show()
 
 # %% [markdown]
-# ## The published claims, scored
+# ## The published claims, checked
 #
-# The three claims `obese_liver.py` had to leave open, tested on the data they
-# were made from.
+# The three claims from this paper that the 19-gene panel could only partly
+# test, now tested on the data they were made from.
 
 # %%
 wt, obese = axes.loc["WT"], axes.loc["ob/ob"]
@@ -609,12 +743,32 @@ claims.to_csv(OUT / "published_claims.csv", index=False)
 claims
 
 # %% [markdown]
-# ## Figures
+# ## Figures and exports
+#
+# Every figure is saved, and the wild-type responsive network is exported in
+# every format TransNet writes (see the *saving, exporting and sharing*
+# walkthrough).
 
 # %%
-from transnet.visualization import plot_transomic_network
+from transnet.io import to_arena3d, to_cytoscape_json, to_transomics2cytoscape, write_network
+from transnet.visualization import (
+    plot_transomic_network,
+    plot_transomic_network_interactive,
+    transomic_backbone,
+)
 
 for figure, name in [
+    (layer_figure, "layer_connectivity"),
+    (timecourse_figure, "metabolites_over_time"),
+    (similarity_figure, "gene_overlap"),
+    (controversial_figures["WT"], "controversial_WT"),
+    (controversial_figures["ob/ob"], "controversial_obob"),
+    (axis_figures["WT"], "regulation_axes_WT"),
+    (axis_figures["ob/ob"], "regulation_axes_obob"),
+    (timing_figure, "temporal_structure"),
+    (hub_figure, "transomic_hubs"),
+    (influence_figure, "downstream_influence"),
+    (vulnerability_figure, "structural_vulnerability"),
     (plot_transomic_network(responsive_subnetwork(graphs["WT"]),
                             title="Wild-type liver, 240 min after glucose"),
      "network_WT"),
@@ -632,4 +786,18 @@ for figure, name in [
 ]:
     figure.savefig(OUT / f"{name}.png", dpi=150, bbox_inches="tight")
 plt.show()
+
+responsive = responsive_subnetwork(graphs["WT"])
+exports = OUT / "exports"
+exports.mkdir(exist_ok=True)
+write_network(responsive, str(exports / "csv"))
+to_cytoscape_json(responsive, exports / "network_cytoscape.json")
+to_arena3d(responsive, exports / "network_arena3d.json")
+to_transomics2cytoscape(responsive, zip_path=exports / "network_transomics2cytoscape.zip")
+# a browser draws a few hundred nodes well; export the backbone the figures use
+html_network = transomic_backbone(graphs["WT"], max_reactions=40)
+plot_transomic_network_interactive(html_network, layout="layered",
+                                   title="Wild-type liver, 240 min").write_html(
+    exports / "network.html")
 print(f"figures and tables in {OUT}")
+print("exports:", ", ".join(sorted(p.name for p in exports.iterdir())))

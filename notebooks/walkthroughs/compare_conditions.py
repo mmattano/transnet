@@ -1,11 +1,16 @@
 # %% [markdown]
 # # Two conditions, compared as networks
 #
-# A differential-network comparison reports which nodes and edges differ. A
-# *trans-omic* comparison asks the sharper question: **which kinds of
-# regulation** changed. A condition that loses its transcriptional arm but
-# keeps its allosteric one is a different story from the reverse, and only an
-# edge-type-aware comparison can tell them apart.
+# Comparing two networks usually means listing the nodes and edges that
+# differ. Because every edge here has a type, the comparison can also say
+# **which kinds of regulation** differ. A condition that loses its
+# transcriptional regulation but keeps its allosteric regulation is a
+# different biological situation from the reverse, and only a comparison that
+# knows the edge types can tell them apart.
+#
+# The example compares the insulin-sensitive and insulin-resistant data on the
+# same network. `compare_transomic_networks` takes the responsive subnetwork of
+# each and reports shared and unique edges per edge type, and nodes per layer.
 
 # %%
 import pandas as pd
@@ -39,6 +44,10 @@ comparison = compare_transomic_networks(
 )
 comparison["edges_by_type"]
 
+# %% [markdown]
+# The Jaccard index is the number of shared edges divided by the number of
+# edges in either network: 1 means identical, 0 means nothing in common.
+
 # %%
 print(f"edge Jaccard: {comparison['summary']['edge_jaccard']:.2f}")
 comparison["nodes_by_layer"]
@@ -46,8 +55,9 @@ comparison["nodes_by_layer"]
 # %% [markdown]
 # ## Molecules that reversed direction
 #
-# Not "changed in both": changed *the other way*, which a shared gene list
-# reports as agreement.
+# These molecules changed significantly in both conditions, but in opposite
+# directions. Comparing two lists of changed genes would count them as
+# shared, and so as agreement.
 
 # %%
 shifts = comparison["regulation_shifts"]
@@ -56,6 +66,10 @@ shifts.assign(sensitive=shifts["sensitive"].map(ARROW),
 
 # %% [markdown]
 # ## Which axis drives each reaction, in each condition
+#
+# The regulation-axis table from the *which axis regulates each reaction*
+# walkthrough, computed for both conditions. Only reactions whose calls differ
+# are shown.
 
 # %%
 axes = pd.concat(
@@ -72,10 +86,13 @@ changed
 # %% [markdown]
 # ## Do the changed metabolites regulate anything?
 #
-# A metabolite whose concentration moved is either a regulator acting back on an
-# enzyme, which is a mechanistic hypothesis, or a passenger carried along by
-# flux. BRENDA annotations separate the two. They are already in the network as
-# signed allosteric edges.
+# A metabolite that changed may simply be carried along by the change in flux,
+# or it may itself act on an enzyme as an allosteric regulator. The network
+# holds the known regulators from BRENDA as signed allosteric edges.
+# `metabolite_regulatory_roles` lists, for each changed metabolite, the
+# reactions it activates or inhibits. `regulatory_role_enrichment` tests
+# whether changed metabolites are regulators more often than measured
+# metabolites in general (Fisher's exact test).
 
 # %%
 for label, graph in [("sensitive", sensitive), ("resistant", resistant)]:
@@ -100,6 +117,11 @@ roles["regulators"][["name", "log2fc", "reactions_activated", "reactions_inhibit
 from transnet.visualization import plot_metabolite_regulators
 
 plot_metabolite_regulators(roles)
+
+# %% [markdown]
+# `plot_condition_comparison` summarises the comparison. The left panel shows,
+# per edge type, the edges kept in both conditions and those gained or lost; the
+# right panel lists the molecules that reversed direction.
 
 # %%
 import matplotlib.pyplot as plt

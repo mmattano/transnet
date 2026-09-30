@@ -3,18 +3,18 @@
 The trans-omic network model
 ============================
 
-TransNet's network is a :class:`networkx.MultiDiGraph`. Both properties are
-load-bearing:
+TransNet's network is a :class:`networkx.MultiDiGraph`: directed, and able to
+hold several edges between the same two nodes. Both properties matter.
 
-**Directed**, because direction *is* the biology. A substrate flows into a
-reaction and a product flows out; a transcription factor regulates its target
-and not the reverse. An undirected graph cannot express any of that, and every
-analysis that follows regulatory flow becomes impossible.
+**Directed**, because regulation has a direction. A substrate flows into a
+reaction and a product flows out; a transcription factor regulates its target,
+not the reverse. Without direction, no analysis that follows regulation from one
+layer to the next would be possible.
 
-**Multigraph**, because one pair of molecules can stand in more than one
-relationship. Glucose-6-phosphate is the *product* of hexokinase and its
-*allosteric inhibitor*. Those are two different edges with opposite signs; a
-simple graph collapses them into one edge that means nothing.
+**Multigraph**, because two molecules can be related in more than one way.
+Glucose 6-phosphate is both the *product* of hexokinase and its *allosteric
+inhibitor*. These are two edges with opposite signs; a simple graph would merge
+them into one and lose both meanings.
 
 .. code-block:: python
 
@@ -68,10 +68,10 @@ graph. Nothing in the package assumes a fixed set; see
 Edge types
 ----------
 
-The edge-type vocabulary is fixed and defined once, in
-:data:`transnet.EDGE_TYPES`. Each entry carries the layers it connects, its
-default sign, and the database it comes from. The taxonomy implements the five
-connection approaches of :ref:`Yugi et al. 2016 <ref-yugi2016>`.
+The edge types are fixed and defined once, in :data:`transnet.EDGE_TYPES`.
+Each records the layers it connects, its default sign, and the database it comes
+from. They follow the ways of connecting omic layers described by
+:ref:`Yugi et al. 2016 <ref-yugi2016>`.
 
 .. list-table::
    :header-rows: 1
@@ -203,7 +203,7 @@ A saved network is ``interactions.csv`` plus ``nodes.csv``:
 
     from transnet.io import read_network, write_network
 
-    graph = read_network("data/example")
+    graph = read_network("data/mouse/latest")
     write_network(subnetwork, "results/responsive")
 
 :func:`~transnet.io.read_network` also reads networks written before the typed
@@ -244,9 +244,10 @@ data:
   by default because the rule misclassifies: on the mouse network it removes 542
   of 888 resolved compounds, most correctly (luteolin, EDTA, cyclosporin A,
   Triton X-100), but also physiological ions (Zn\ :sup:`2+`, Ca\ :sup:`2+`,
-  Mg\ :sup:`2+`), heparin and deoxycholate, an endogenous bile acid. It barely
-  changes results in any case: the metabolite axis and metabolite regulatory roles only use *measured*
-  metabolites, and assay reagents are usually not measured.
+  Mg\ :sup:`2+`), heparin and deoxycholate, an endogenous bile acid. It
+  changes results little in any case: the metabolite axis and the metabolite
+  regulatory roles use only *measured* metabolites, and assay reagents are
+  rarely measured.
 
 Names BRENDA gives that match no KEGG compound -- mostly synthetic inhibitors --
 are logged and skipped.

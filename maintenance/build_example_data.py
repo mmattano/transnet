@@ -1,4 +1,4 @@
-"""Generate the bundled example trans-omic network in ``data/example/``.
+"""Generate the bundled example trans-omic network in ``transnet/data/example/``.
 
 A hand-curated slice of mouse hepatic glucose metabolism -- glycolysis,
 gluconeogenesis, the pentose-phosphate entry point and the insulin signalling
@@ -32,7 +32,7 @@ from transnet.biology.layers import (                            # noqa: E402
 )
 
 OUTPUT_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "example"
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "transnet", "data", "example"
 )
 
 # --------------------------------------------------------------------------
@@ -269,6 +269,7 @@ def main():
 
     _write_omics()
     _write_timecourse()
+    _write_pathways()
 
     graph = network.generate_graph()
     print(f"Wrote example network to {OUTPUT_DIR}")
@@ -447,6 +448,24 @@ def _write_timecourse():
     pd.DataFrame(
         rows, columns=["id", "0", "5", "15", "30", "60"]
     ).to_csv(os.path.join(OUTPUT_DIR, "metabolome_timecourse.csv"), index=False)
+
+
+#: Which pathway each example reaction belongs to. The reversible steps shared
+#: by glycolysis and gluconeogenesis are listed under both.
+PATHWAYS = {
+    "Glycolysis": ["R00299", "R00771", "R00756", "R01070", "R01015", "R01061",
+                   "R01512", "R01518", "R00658", "R00200"],
+    "Gluconeogenesis": ["R00341", "R00762", "R00303", "R00771", "R01070", "R01015",
+                        "R01061", "R01512", "R01518", "R00658"],
+    "Pyruvate fate": ["R00703", "R00209"],
+    "Pentose phosphate pathway": ["R00835"],
+}
+
+
+def _write_pathways():
+    rows = [{"reaction": reaction, "pathway": pathway}
+            for pathway, reactions in PATHWAYS.items() for reaction in reactions]
+    pd.DataFrame(rows).to_csv(os.path.join(OUTPUT_DIR, "reaction_pathways.csv"), index=False)
 
 
 if __name__ == "__main__":

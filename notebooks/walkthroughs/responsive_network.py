@@ -1,9 +1,11 @@
 # %% [markdown]
 # # Mapping data onto the network
 #
-# Measurements arrive keyed by whatever the instrument produced. Mapping them
-# onto the network is where studies lose data without noticing, so
-# `map_omics_to_network` returns a coverage report rather than mapping quietly.
+# Each omics table identifies its molecules in its own way: Entrez or Ensembl
+# gene ids, UniProt accessions, KEGG compound ids or plain names. Mapping the
+# tables onto the network is where data are most easily lost without anyone
+# noticing, so `map_omics_to_network` returns a report of how much of each
+# table it could place.
 
 # %%
 import pandas as pd
@@ -29,9 +31,11 @@ report = map_omics_to_network(
 report.per_layer
 
 # %% [markdown]
-# A `match_fraction` below about 0.5 usually means an identifier-type mismatch,
-# such as Ensembl ids against a network keyed by Entrez. The report names the
-# features it could not place, and `match_rate` summarises the whole mapping.
+# `match_fraction` is the share of a table's rows that found a node. A value
+# below about 0.5 usually means the table uses a different kind of identifier
+# from the network, for example Ensembl ids against a network keyed by Entrez
+# ids. `unmatched` lists the rows that could not be placed, and `match_rate` is
+# the share over all tables.
 
 # %%
 print(f"overall match rate {report.match_rate:.0%}")
@@ -48,8 +52,9 @@ for layer, missing in report.unmatched.items():
 layer_coverage(graph)
 
 # %% [markdown]
-# `plot_layer_changes` draws what a per-layer analysis would report: counts up
-# and down per layer, and nothing about how they connect.
+# `plot_layer_changes` draws what an analysis of each layer on its own would
+# report: the number of molecules up and down per layer, and nothing about how
+# they are connected.
 
 # %%
 from transnet.visualization import plot_layer_changes
@@ -63,9 +68,9 @@ plot_layer_changes(
 # %% [markdown]
 # ## The responsive subnetwork
 #
-# The molecules that changed, plus the relationships that join them. This is
-# the object the trans-omics literature works on: the part of the hierarchy
-# that moved, with its wiring.
+# `responsive_subnetwork` keeps the molecules that changed and the edges
+# between them. This is the part of the network that responded, and it is what
+# most trans-omic analyses and figures work on.
 
 # %%
 responsive = responsive_subnetwork(graph)
@@ -73,9 +78,10 @@ print(f"{responsive.number_of_nodes()} molecules, {responsive.number_of_edges()}
 pd.Series({d["edge_type"]: 1 for _, _, d in responsive.edges(data=True)}).index.tolist()
 
 # %% [markdown]
-# Reactions are kept as connectors even though a reaction is never itself
-# measured. Without them the enzyme and the metabolite it acts on fall into
-# separate components and no cross-layer statement is possible.
+# Reactions are kept even though a reaction is never measured itself. Without
+# them an enzyme and the metabolites of its reaction would not be connected, and
+# nothing could be said across layers. `regulated_nodes` lists the changed
+# molecules.
 
 # %%
 regulated = regulated_nodes(graph)
@@ -87,10 +93,11 @@ pd.DataFrame(
 # %% [markdown]
 # ## Responsive, with or without a direction
 #
-# `regulated` carries a direction: +1, -1, or 0 for a molecule that changed
-# without a usable fold change. `is_responsive` asks the weaker question, which
-# is the one the subnetwork uses, so a metabolite measured as changed but
-# without a sign still joins its reaction.
+# Each mapped node has a `regulated` attribute: +1 (up), -1 (down), or 0. A
+# molecule can be significant without a usable fold change, for example from a
+# test across several time points; it then has `regulated` 0 but still counts
+# as responsive. `is_responsive` checks for either case, and it is the test
+# `responsive_subnetwork` uses, so such a molecule still joins its reaction.
 
 # %%
 from transnet import is_responsive

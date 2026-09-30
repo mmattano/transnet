@@ -1,23 +1,23 @@
 # %% [markdown]
-# # Thermogenic lipolysis in brown adipocytes
+# # Brown adipocytes: thermogenic lipolysis
 #
-# Immortalised murine brown adipocytes, stimulated with norepinephrine to
-# trigger the non-shivering cold response. Six replicates per timepoint;
-# transcriptome and proteome at 0, 4 and 24 h; metabolome at seven points
-# between 0 and 24 h.
+# **Question.** When brown fat cells are stimulated to produce heat, which
+# reactions change, through which regulatory mechanism, and in what order?
 #
-# The data and the published analysis are
+# **Data.** Immortalised mouse brown adipocytes stimulated with
+# norepinephrine, which triggers heat production without shivering. Six
+# replicates per time point; transcriptome and proteome at 0, 4 and 24 h;
+# metabolome at seven time points between 0 and 24 h. The data and the
+# published analysis are
 # [Anagho-Mattanovich *et al.*, *iScience* 28(9):113382, 2025](https://doi.org/10.1016/j.isci.2025.113382),
-# which compared five ways of integrating them. This notebook runs the
-# trans-omic network reading and ends by setting it beside what that paper
-# concluded.
+# which compared five ways of integrating them. This notebook runs the whole
+# TransNet catalogue on the data and ends by comparing the results with what
+# that paper concluded.
 #
 # Needs the mouse network: `python maintenance/build_networks.py --organisms
 # mouse --brenda`.
 
 # %%
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -32,7 +32,6 @@ from transnet import (
     layer_coverage,
     map_omics_to_network,
     metabolite_regulatory_roles,
-    path_consistency_summary,
     reaction_regulation_table,
     regulation_axis_summary,
     regulatory_role_enrichment,
@@ -64,7 +63,6 @@ from transnet.datasets import (
     DATA_DIR,
     brown_adipocyte_contrast,
     load_brown_adipocyte_omics,
-    timepoint_columns,
 )
 from transnet.io import read_network
 
@@ -89,19 +87,25 @@ print(f"{graph.number_of_nodes():,} molecules, {graph.number_of_edges():,} relat
 # %% [markdown]
 # ## How much of this network crosses layers
 #
-# A network whose edges sit inside single layers is a stack of separate
-# single-omics networks; this fraction is what earns the name.
+# If most edges run within a layer, the network is in effect a set of separate
+# single-omics networks. The share of edges that cross layers measures how much
+# of it is genuinely trans-omic.
 
 # %%
+from transnet.visualization import plot_layer_connectivity
+
 connectivity = cross_layer_connectivity(graph)
 print(f"{connectivity['cross_layer_fraction']:.0%} of edges cross between layers")
-connectivity["matrix"]
+layer_figure = plot_layer_connectivity(connectivity,
+                                       title="Mouse network: edges between layers")
+plt.show()
 
 # %% [markdown]
 # ## Identifiers
 #
-# Transcripts are Ensembl, the network's genes are Entrez; metabolites are
-# names, the network's are KEGG compounds. Both maps are built once.
+# The transcripts are identified by Ensembl ids and the network's genes by
+# Entrez ids; the metabolites by name and the network's by KEGG compound ids.
+# Both translations are built once and cached.
 
 # %%
 idmap_file = OUT / "ensembl_to_entrez.json"
@@ -124,10 +128,10 @@ print(f"{len(gene_map):,} transcripts and {len(metabolite_map)} metabolites reso
 # %% [markdown]
 # ## The contrast
 #
-# 24 h of sustained stimulation against unstimulated cells. Every layer is
-# log2, so a fold change is a difference of means; the standard error comes
-# with it, which is what lets a protein's change be compared with its
-# transcript's without a threshold (transcript-protein concordance).
+# The main contrast is 24 h of stimulation against unstimulated cells. Every
+# layer is on a log2 scale, so a fold change is a difference of means. Its
+# standard error is kept too, which later allows a protein's change to be
+# compared with its transcript's without a significance cut-off.
 
 # %%
 CONTROL, TREATMENT = "0h", "24h"
@@ -140,6 +144,30 @@ report = map_omics_to_network(
 )
 report.per_layer
 
+# %% [markdown]
+# `brown_adipocyte_contrast` is a thin wrapper around
+# `compute_differential_expression`, which tests every feature of a
+# features x samples table between two sets of sample columns and corrects for
+# multiple testing (Benjamini-Hochberg). Called directly on the metabolome, it
+# also shows how much the choice of test matters: a Welch t-test (used
+# throughout this study) against the rank-based Wilcoxon test.
+
+# %%
+from transnet.analysis import compute_differential_expression
+from transnet.datasets import timepoint_columns
+
+metabolome_table = omics["Metabolome"].reset_index()
+metabolome_table = metabolome_table.rename(columns={metabolome_table.columns[0]: "feature"})
+pd.DataFrame({
+    method: {"changed at q <= 0.05": int((compute_differential_expression(
+        metabolome_table,
+        control_cols=timepoint_columns(omics["Metabolome"], CONTROL),
+        treatment_cols=timepoint_columns(omics["Metabolome"], TREATMENT),
+        id_col="feature", method=method, data_is_log=True,
+    )["adj_p_value"] <= 0.05).sum())}
+    for method in ("t-test", "wilcoxon")
+})
+
 # %%
 coverage = layer_coverage(graph)
 coverage
@@ -150,12 +178,38 @@ coverage
 # that were measured, not on the ones that exist.
 
 # %% [markdown]
-# ## Where the layers converge
+# ## The responsive network
+#
+# The molecules that changed and the edges between them.
 
 # %%
 responsive = responsive_subnetwork(graph)
 print(f"{responsive.number_of_nodes():,} responsive molecules, "
       f"{responsive.number_of_edges():,} relationships between them")
+
+# %% [markdown]
+# `detect_communities` splits the responsive network into densely connected
+# groups. Most of the large ones here are a transcription factor with the
+# hundreds of genes it binds, so they contain transcripts and one protein. The
+# figure draws the community with the most reactions, the metabolic part of the
+# response, with the most connected and the changed molecules named.
+
+# %%
+from transnet.analysis import detect_communities
+from transnet.visualization import plot_community_network
+
+communities = detect_communities(responsive, method="louvain")
+membership = pd.DataFrame({"community": pd.Series(communities)})
+membership["layer"] = [responsive.nodes[n].get("layer") for n in membership.index]
+reactions_per_community = (membership["layer"] == "Reactions").groupby(
+    membership["community"]).sum()
+metabolic = int(reactions_per_community.idxmax())
+print(f"{membership['community'].nunique()} communities; community {metabolic} holds "
+      f"{int(reactions_per_community.max())} reactions")
+community_figure = plot_community_network(
+    responsive, communities, community=metabolic, label_top=20,
+    title="Brown adipocytes: communities in the responsive network")
+plt.show()
 
 # %% [markdown]
 # ## Which axis regulates each reaction
@@ -172,25 +226,72 @@ print(f"{len(regulated):,} reactions regulated: {len(enzyme_only):,} through enz
       f"only, {len(metabolite_only):,} through metabolites only, {len(both):,} through both")
 print(f"{len(controversial):,} are controversial -- the two axes point opposite ways")
 regulation.to_csv(OUT / "reaction_regulation.csv", index=False)
+regulated["gene_axis_evidence"].value_counts(dropna=False).to_frame("reactions")
+
+# %% [markdown]
+# `gene_axis_evidence` shows what each enzyme-axis call rests on: the protein
+# alone, the transcript alone, or both moving together (`gene_protein`).
+#
+# ### The controversial reactions
+#
+# In these reactions the enzyme axis and the metabolite axis point in opposite
+# directions. Each bar in the figure is one measured molecule's push on the
+# reaction: to the right it speeds the reaction up, to the left it slows it
+# down.
+
+# %%
+from transnet.visualization import plot_axis_composition, plot_controversial_reactions
+
 controversial.head(10)[["reaction", "name", "gene_axis", "metabolite_axis",
                         "allosteric_regulators"]]
+
+# %%
+controversial_figure = plot_controversial_reactions(graph, regulation, max_enzymes=6,
+                                                    title="Brown adipocytes, 24 h: "
+                                                          "controversial reactions")
+plt.show()
+
+# %%
+composition = pd.DataFrame([{
+    "contrast": f"{TREATMENT} vs {CONTROL}",
+    "enzyme_axis_only": len(enzyme_only),
+    "metabolite_axis_only": len(metabolite_only),
+    "both_axes": len(both),
+    "controversial": len(controversial),
+}])
+composition_figure = plot_axis_composition(composition)
+plt.show()
 
 # %% [markdown]
 # ## Per-pathway balance
 #
-# The same attribution, aggregated: which pathways are driven by enzyme
-# amount, which by their metabolites, and where the two disagree.
+# The same attribution per pathway: which pathways change through enzyme
+# amount, which through their metabolites, and where the two disagree.
+# `kegg_reaction_pathways` assigns each reaction to its mouse KEGG pathways.
 
 # %%
-pathway_balance = regulation_axis_summary(regulation)
-pathway_balance.head(12)
+from transnet.api import kegg_reaction_pathways
+from transnet.visualization import plot_regulation_axes
+
+pathways = kegg_reaction_pathways(regulation["reaction"], organism="mmu")
+pathway_balance = regulation_axis_summary(regulation, pathway_map=pathways)
+pathway_balance.head(12)[["pathway", "n_reactions", "gene_activated", "gene_inhibited",
+                          "metabolite_activated", "metabolite_inhibited", "n_controversial"]]
+
+# %%
+axes_figure = plot_regulation_axes(
+    pathway_balance[pathway_balance["pathway"] != "unassigned"].head(15),
+    title="Brown adipocytes, 24 h: regulation by pathway")
+plt.show()
 
 # %% [markdown]
 # ## Is each protein change transcriptional?
 #
-# The paper's own example of transcript-protein divergence is the lipid
-# droplet machinery: *Sqle* and *Fdft1* transcripts fall at 4 h while their
-# proteins rise. That is exactly the `discordant` category here.
+# For every gene measured as both transcript and protein,
+# `expression_concordance` asks whether the protein followed its transcript.
+# The paper's own example of the two diverging is cholesterol and lipid-droplet
+# synthesis: *Sqle* and *Fdft1* transcripts fall at 4 h while their proteins
+# rise. That corresponds to the `discordant` category here.
 
 # %%
 concordance = expression_concordance(graph)
@@ -211,6 +312,12 @@ columns = [c for c in ("symbol", "gene_log2fc", "protein_log2fc", "category",
            if c in named.columns]
 named[named["symbol"].isin(PAPER_GENES)][columns]
 
+# %%
+from transnet.visualization import plot_expression_concordance
+
+concordance_figure = plot_expression_concordance(concordance)
+plt.show()
+
 # %% [markdown]
 # ## Which factors drive the responsive genes?
 
@@ -220,6 +327,12 @@ implicated = factors[factors["q_value"] <= 0.05]
 print(f"{len(implicated)} of {len(factors)} transcription factors implicated")
 implicated.head(10)[["name", "n_responsive_targets", "n_up", "n_down", "q_value",
                      "inferred_activity", "factor_regulated"]]
+
+# %%
+from transnet.visualization import plot_tf_activity
+
+tf_figure = plot_tf_activity(factors, title="Brown adipocytes, 24 h: transcription factors")
+plt.show()
 
 # %% [markdown]
 # ## Do the changed metabolites regulate anything?
@@ -234,6 +347,12 @@ print(f"{counts['n_differential_regulators']} of {counts['n_differential']} chan
       f"q = {row['q_value']:.2g})")
 roles["regulators"].head(10)[["name", "log2fc", "reactions_activated", "reactions_inhibited"]]
 
+# %%
+from transnet.visualization import plot_metabolite_regulators
+
+regulator_figure = plot_metabolite_regulators(roles)
+plt.show()
+
 # %% [markdown]
 # ## Signed paths to the metabolome
 
@@ -245,10 +364,10 @@ print(f"{agree} of {tested} changed metabolites predicted in the right direction
 verdicts.head(10)[["target", "observed", "predicted", "agrees", "n_paths"]]
 
 # %% [markdown]
-# The paths themselves, with what each one predicts against what was measured.
-# A chance-level rate is read from this figure, not just from the number: the
-# question is whether the misses are scattered or concentrated on a few
-# metabolites.
+# The best-supported paths, each coloured by the measured change of its
+# molecules. When the overall rate is close to chance, the figure shows whether
+# the wrong predictions are spread across many metabolites or concentrated on a
+# few.
 
 # %%
 from transnet.visualization import plot_regulatory_paths
@@ -263,12 +382,20 @@ plt.show()
 hubs = transomic_hubs(responsive, top_percent=2)
 hubs.head(10)[["name", "layer", "cross_layer_degree", "n_layers_touched"]]
 
+# %%
+from transnet.visualization import plot_transomic_hubs
+
+hub_figure = plot_transomic_hubs(hubs, title="Brown adipocytes: molecules connecting layers")
+plt.show()
+
 # %% [markdown]
 # ## Does the upper hierarchy predict the metabolites?
 #
 # Propagating the changed genes and proteins forward along signed edges gives
-# each metabolite a predicted direction. Comparing that with the measurement
-# is the strongest test the network can fail, and it usually does.
+# each metabolite a predicted direction. Comparing it with the measurement is
+# the most demanding test in the catalogue, because every step of the network
+# has to be right. On real data it often fails, and the result is reported
+# either way.
 
 # %%
 seeds = {n: float(d["log2fc"]) for n, d in graph.nodes(data=True)
@@ -282,11 +409,18 @@ if not measured.empty and "agrees" in measured:
           f"{versus_chance(agree, len(measured))}")
 measured.head(10)
 
+# %%
+from transnet.visualization import plot_downstream_influence
+
+influence_figure = plot_downstream_influence(influence)
+plt.show()
+
 # %% [markdown]
 # ## Timing on the network
 #
-# The seven-point metabolome gives each metabolite a half-response time. Morita
-# et al. ask whether the best-connected molecules respond fastest.
+# The seven-point metabolome gives each metabolite a half-response time: the
+# time it takes to reach half of its largest change. Morita *et al.* asked
+# whether the best-connected molecules respond fastest.
 
 # %%
 metabolome_labels = [str(c).split("_")[0] for c in omics["Metabolome"].columns]
@@ -311,11 +445,18 @@ structure = temporal_network_structure(graph)
 print(structure["degree_vs_thalf"]["interpretation"])
 structure["per_layer_thalf"]
 
+# %%
+from transnet.visualization import plot_temporal_structure
+
+timing_figure = plot_temporal_structure(graph, structure, time_unit="h")
+plt.show()
+
 # %% [markdown]
 # ## 4 h against 24 h
 #
-# Two contrasts of the same cells, compared as networks: not which molecules
-# differ, but which *kinds* of regulation the early and late responses use.
+# The early (4 h) and late (24 h) responses of the same cells, compared as
+# networks. The question is not only which molecules differ, but which *kinds*
+# of regulation each response uses.
 
 # %%
 early = graph.copy()
@@ -330,13 +471,19 @@ print(f"edge Jaccard between the two responses: "
       f"{comparison['summary']['edge_jaccard']:.2f}")
 comparison["edges_by_type"]
 
+# %%
+from transnet.visualization import plot_condition_comparison
+
+comparison_figure = plot_condition_comparison(comparison, "4h", "24h", graph=graph)
+plt.show()
+
 # %% [markdown]
 # ## Factors, read through the network
 #
-# The published analysis fits MOFA factors to these data. A factor model finds
-# co-variation; the question it cannot ask of itself is whether a factor's
-# strongest features are *connected*. That is what the permutation test below
-# answers.
+# The published analysis fitted MOFA factors to these data. A factor model
+# finds molecules that vary together across samples. It cannot tell whether a
+# factor's strongest molecules are also connected biochemically; the network
+# can.
 
 # %%
 shared_samples = sorted(
@@ -345,17 +492,28 @@ shared_samples = sorted(
     & set(omics["Metabolome"].columns)
 )
 matrices = {layer: frame[shared_samples].T for layer, frame in omics.items()}
+
+# A few metabolites are missing in some samples. network_guided_imputation fills
+# each gap from the same sample's values for the metabolite's network
+# neighbours, which is a better guess than the average over all samples.
+from transnet.analysis.factors import network_guided_imputation
+
+missing = int(matrices["Metabolome"].isna().sum().sum())
+matrices["Metabolome"] = network_guided_imputation(matrices["Metabolome"], graph,
+                                                   id_map=metabolite_map)
+print(f"{missing} missing metabolite values filled from network neighbours")
 design = pd.DataFrame(
     {"timepoint": [str(s).split("_")[0] for s in shared_samples]}, index=shared_samples)
 print(f"{len(shared_samples)} samples measured in all three layers: "
       + ", ".join(sorted(set(design['timepoint']))))
 
 # %% [markdown]
-# **First, are the layers measured on the same cultures?** A joint factor model
-# treats `0h_01` as one sample in every layer, and so do MOFA and DIABLO. The
-# files share column *names*; whether they share *samples* is testable: within a
-# timepoint, a culture whose transcript of a gene runs high should, if it is the
-# same culture, tend to have that protein high too.
+# **First, are the layers measured on the same cultures?** A joint factor
+# model, like MOFA and DIABLO, treats `0h_01` as the same sample in every
+# layer. The files share column *names*, but whether they share *samples* can
+# be tested: within a time point, a culture with a high transcript level of a
+# gene should, if it is the same culture, also tend to have a high level of the
+# protein.
 
 # %%
 transcripts, proteins = matched_transcript_protein(
@@ -368,10 +526,10 @@ print(f"agreement as listed {pairing['observed']:.3f}, under shuffled pairings "
       f"{'paired' if pairing['paired'] else 'pairing not confirmed'}")
 
 # %% [markdown]
-# The pairing is confirmed: the layers are the same cultures, so the joint model
-# is sound, and a factor carried by culture-to-culture variation within a
-# timepoint is as real as one carried by the timepoints themselves. The
-# robustness check below still says which kind each factor is.
+# The pairing is confirmed: the layers come from the same cultures, so the
+# joint model is sound. A factor carried by differences between cultures within
+# a time point is then as real as one carried by the time points themselves.
+# The robustness check below still reports which kind each factor is.
 
 # %%
 factorisation = fit_factors(matrices, n_components=5)
@@ -424,24 +582,29 @@ for factor in factorisation.factors_.columns:
 # Three further readings, each asking something of a factor that the factor
 # model cannot ask of itself.
 #
-# **Do the layers agree?** A joint factor is fitted on the layers stacked
-# together, which does not make it trans-omic: one layer can carry it alone.
-# Projecting the samples onto a factor within each layer and correlating those
-# projections says which it is.
+# **Do the layers agree?** A joint factor is fitted on all layers at once, but
+# one layer alone can carry it. `factor_layer_scores` projects the samples onto
+# each factor using one layer at a time, and `factor_cross_layer_agreement`
+# correlates those projections between layers.
 
 # %%
+from transnet.analysis.factors import factor_layer_scores
+
+layer_scores = factor_layer_scores(factorisation)
+print({layer: scores.shape for layer, scores in layer_scores.items()})
 agreement = factor_cross_layer_agreement(factorisation)
 agreement.pivot_table(index="factor", columns=["layer_a", "layer_b"],
                       values="correlation").round(2)
 
 # %% [markdown]
 # **Do a factor's layers land in the same place on the network?** A joint
-# factor loads on transcripts, proteins and metabolites at once; that makes it
-# trans-omic only if those features are related by the biochemistry. Each
-# layer's strongest features are diffused separately, and the overlap of the
-# resulting profiles is compared with random features *of the same layers* --
-# the transcriptome is a hundred times the size of the metabolome, so a null
-# that ignored that would be all transcripts.
+# factor includes transcripts, proteins and metabolites, but that makes it
+# trans-omic only if those molecules are related biochemically. The strongest
+# molecules of each layer are spread over the network separately (random walk
+# with restart), and the overlap of the resulting profiles is compared with
+# that of random molecules *from the same layers*. Drawing the random molecules
+# from all layers together would give mostly transcripts, because the
+# transcriptome is a hundred times larger than the metabolome.
 
 # %%
 propagation = factor_network_propagation(graph, factorisation.loadings_,
@@ -449,10 +612,10 @@ propagation = factor_network_propagation(graph, factorisation.loadings_,
 propagation["table"].round(3)
 
 # %% [markdown]
-# **Which factors to trust.** Every reading above in one table. A factor worth
-# interpreting follows the design, is carried by the layers *together* (and
-# stays so however replicates are paired), and has its features converge on
-# the network. Each column rules out a different way a factor can mislead.
+# **Which factors to trust.** All the readings above in one table. A factor
+# worth interpreting follows the design, is carried by the layers *together*
+# (whatever the pairing of replicates), and has its molecules converge on the
+# network. Each column rules out a different way a factor can mislead.
 
 # %%
 robustness = pairing_robustness(factorisation, groups, n_shuffles=200)
@@ -476,9 +639,10 @@ synthesis["interpret?"] = (joint & trusted_pairing & (synthesis["overlap q"] <= 
 synthesis.round(3)
 
 # %% [markdown]
-# For the factor that passes every reading, the nodes that receive most
-# signal *relative to random seeds of the same layers* -- so the network's hubs
-# do not win by default -- say what it is about.
+# For the factor that passes every reading, the molecules that receive the
+# most signal, *relative to random starting molecules from the same layers*,
+# show what it is about. Comparing with random starts stops the network's
+# best-connected molecules from ranking first for every factor.
 
 # %%
 trusted = synthesis[synthesis["interpret?"] == "yes"]
@@ -488,22 +652,20 @@ print(f"{leading}: where its transcripts, proteins and metabolites meet")
 propagation["top_nodes"][leading].head(12)[["name", "layer", "enrichment"]]
 
 # %% [markdown]
-# **What is the factor about?** Its strongest features, drawn where they sit
+# **What is the factor about?** Its strongest molecules, drawn where they sit
 # on the network rather than as a bar chart of loadings.
 
 # %%
-from transnet.visualization import plot_factor_network
-
 plot_factor_network(graph, factorisation.loadings_, leading, id_maps=id_map, top_n=12)
 plt.show()
 
 # %% [markdown]
 # ## Timing: three metabolic states
 #
-# The paper reports three states, uninduced (0 h), active lipolysis (4 h) and
-# sustained induction (24 h), with the metabolome moving first. Clustering
-# the metabolite trajectories over all seven timepoints asks the same question
-# of the same data.
+# The paper reports three states: uninduced (0 h), active lipolysis (4 h) and
+# sustained induction (24 h), with the metabolome changing first. Clustering the
+# metabolite time courses over all seven time points asks the same question of
+# the same data.
 
 # %%
 metabolome = omics["Metabolome"]
@@ -534,8 +696,9 @@ plt.show()
 # %% [markdown]
 # ## The wiring itself: motifs, bottlenecks, and a null
 #
-# Everything above reads data *through* the network. These three read the
-# network, and are the analyses a molecule list cannot approximate at all.
+# The analyses above read the data through the network. These three look at
+# the structure of the responsive network itself, which a list of molecules
+# cannot provide at all.
 
 # %%
 from transnet import (
@@ -550,9 +713,9 @@ motifs["motifs"].head(12)[["motif", "reaction_name", "metabolite_name", "enzyme"
                            "sign_product"]]
 
 # %% [markdown]
-# Each product-inhibition row is a reaction whose own product holds it back,
-# with both the enzyme and the metabolite measured here, which is the mechanism behind
-# a reaction that slows while its enzyme rises.
+# Each product-inhibition row is a reaction slowed down by its own product,
+# with both the enzyme and the product measured here. This is one way a
+# reaction can slow down while its enzyme increases.
 
 # %%
 vulnerability = structural_vulnerability(responsive)
@@ -569,8 +732,8 @@ vulnerability_figure = plot_structural_vulnerability(vulnerability)
 plt.show()
 
 # %% [markdown]
-# Those are the molecules the response runs through: remove one and the rest
-# of the response is no longer connected to what it regulates.
+# These are the molecules the response runs through: removing one would
+# disconnect part of the response from the rest.
 
 # %%
 convergence = convergence_significance(graph, n_randomisations=200)
@@ -597,11 +760,11 @@ plt.show()
 # | Lipid-droplet genes (*Sqle*, *Fdft1*) fall as transcripts while their proteins rise | the same genes land in the `discordant` category of transcript-protein concordance, without being looked for |
 # | Upper glycolysis (*Pfkl*, *Pfkp*) down, lower glycolysis (*Pklr*) up | checked directly below |
 #
-# The paper reached its trans-omic observations, the Rock2/protamine link and
-# the glycolytic split, by reading a network by hand. The point of the table
-# above is that the same statements fall out of the catalogue as ordinary
-# output, with the axis attribution and the threshold-free transcript-protein
-# test attached.
+# The paper reached its trans-omic observations, such as the Rock2/protamine
+# link and the split in glycolysis, by reading a network by hand. The table
+# shows that the same statements come out of the catalogue as ordinary output,
+# together with the regulation axis of each reaction and the
+# transcript-protein test.
 
 # %%
 GLYCOLYSIS = ["Pfkl", "Pfkp", "Pfkm", "Pklr", "Pkm", "Hk1", "Hk2", "Gpi1", "Eno1"]
@@ -610,28 +773,34 @@ named[named["symbol"].isin(GLYCOLYSIS)][
 ]
 
 # %% [markdown]
-# ## Figures
+# ## Figures and exports
+#
+# Every figure is saved, and the responsive network is exported in every format
+# TransNet writes (see the *saving, exporting and sharing* walkthrough).
 
 # %%
+from transnet.io import to_arena3d, to_cytoscape_json, to_transomics2cytoscape, write_network
 from transnet.visualization import (
-    plot_expression_concordance,
-    plot_axis_composition,
     plot_transomic_network,
+    plot_transomic_network_interactive,
+    transomic_backbone,
 )
-
-composition = pd.DataFrame([{
-    "contrast": f"{TREATMENT} vs {CONTROL}",
-    "enzyme_axis_only": len(enzyme_only),
-    "metabolite_axis_only": len(metabolite_only),
-    "both_axes": len(both),
-    "controversial": len(controversial),
-}])
 
 for figure, name in [
     (plot_transomic_network(responsive, title=f"Brown adipocytes, {TREATMENT} vs {CONTROL}"),
      "network"),
-    (plot_axis_composition(composition), "regulation_axes"),
-    (plot_expression_concordance(concordance), "concordance"),
+    (layer_figure, "layer_connectivity"),
+    (community_figure, "communities"),
+    (composition_figure, "axis_composition"),
+    (axes_figure, "regulation_axes"),
+    (controversial_figure, "controversial_reactions"),
+    (concordance_figure, "concordance"),
+    (tf_figure, "tf_activity"),
+    (regulator_figure, "metabolite_regulators"),
+    (hub_figure, "transomic_hubs"),
+    (influence_figure, "downstream_influence"),
+    (timing_figure, "temporal_structure"),
+    (comparison_figure, "early_vs_late"),
     (convergence_figure, "convergence_null"),
     (vulnerability_figure, "structural_vulnerability"),
     (motif_figure, "regulatory_motifs"),
@@ -639,4 +808,17 @@ for figure, name in [
 ]:
     figure.savefig(OUT / f"{name}.png", dpi=150, bbox_inches="tight")
 plt.show()
+
+exports = OUT / "exports"
+exports.mkdir(exist_ok=True)
+write_network(responsive, str(exports / "csv"))
+to_cytoscape_json(responsive, exports / "network_cytoscape.json")
+to_arena3d(responsive, exports / "network_arena3d.json")
+to_transomics2cytoscape(responsive, zip_path=exports / "network_transomics2cytoscape.zip")
+# a browser draws a few hundred nodes well; export the backbone the figures use
+html_network = transomic_backbone(graph, max_reactions=40)
+plot_transomic_network_interactive(html_network, layout="layered",
+                                   title="Brown adipocytes, 24 h").write_html(
+    exports / "network.html")
 print(f"figures and tables in {OUT}")
+print("exports:", ", ".join(sorted(p.name for p in exports.iterdir())))

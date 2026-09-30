@@ -17,19 +17,20 @@ make notebooks                                        # every offline walkthroug
 
 ## Walkthroughs (offline, seconds)
 
-Run against `data/example/`: a curated slice of mouse hepatic glucose
+Run against `transnet/data/example/`: a curated slice of mouse hepatic glucose
 metabolism with real KEGG, UniProt and EC identifiers. No credentials, no
 network access.
 
 | | Covers |
 |---|---|
-| `build_network` | the typed network: layers, edge types, signs, and how much of it crosses layers |
-| `responsive_network` | mapping data on, the coverage report, and the responsive subnetwork |
-| `reaction_regulation` | the flagship analysis: which axis regulates each reaction, and where they disagree |
-| `regulatory_paths` | signed path tracing, and what happens when a layer is missing |
-| `temporal_and_hubs` | hubs that join layers, and whether the wiring explains the timing |
-| `compare_conditions` | two conditions as typed networks; which metabolites act back on enzymes |
-| `network_topology` | statistics, centrality, communities, active modules, diffusion, and four ways to export |
+| `build_network` | the typed network: layers, edge types, signs, the builder API, and the organism registry |
+| `responsive_network` | mapping data onto the network, the coverage report, and the responsive subnetwork |
+| `reaction_regulation` | which axis regulates each reaction, where the axes disagree, per-pathway balance, the phospho axis, transcript–protein concordance |
+| `regulatory_paths` | predicting a metabolite's direction along signed paths, from receptor to metabolite, and by propagation |
+| `temporal_and_hubs` | molecules that connect layers, and whether the network explains response timing |
+| `compare_conditions` | two conditions compared as typed networks; which changed metabolites regulate enzymes |
+| `network_topology` | statistics, centrality, communities, active modules, motifs, weak points, a null model, diffusion |
+| `export_network` | every export format: CSV, adjacency matrix, Cytoscape, Arena3D, transomics2cytoscape, HTML, static figures |
 | `transcription_factors` | inferring which factors drove the responsive genes, and where the annotation runs out |
 | `external_annotation` | Reactome, HMDB, BRENDA, ChIP-Atlas and KEGG called directly (**needs network access**) |
 
@@ -50,10 +51,10 @@ make studies
 |---|---|
 | `brown_adipocytes` | norepinephrine-stimulated brown adipocytes (Anagho-Mattanovich *et al.*, iScience 2025) |
 | `motrpac_rat` | MoTrPAC endurance training, six tissues on one rat network |
-| `obese_liver` | Uematsu *et al.* 2022, fetched at run time, published claims scored |
-| `kokaji_liver` | Kokaji *et al.* 2020: genome-wide liver time course, WT and ob/ob, fetched at run time |
+| `obese_liver` | lean and obese mouse liver after glucose, 19-enzyme panel (Uematsu *et al.* 2022), fetched at run time |
+| `liver_timecourse` | lean and obese mouse liver after glucose, genome-wide over four hours (Kokaji *et al.* 2020), fetched at run time |
 
-Each writes CSVs and figures under `data/<study>_results/`. The narrative
+Each writes CSVs, figures and network exports under `data/<study>_results/`. The narrative
 versions, with the figures and the comparison against each paper's own
 conclusions, are in `docs/source/`.
 

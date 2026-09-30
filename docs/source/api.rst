@@ -4,8 +4,8 @@ API reference
 Trans-omics analysis
 --------------------
 
-The headline API. Every function here uses the network's typed, directed,
-signed edges; see :ref:`transomics-analyses` for what each one is for.
+Every function here uses the network's typed, directed, signed edges; see
+:ref:`transomics-analyses` for what each one is for.
 
 .. automodule:: transnet.analysis.transomics.mapping
    :members:
@@ -50,6 +50,9 @@ The network
 .. automodule:: transnet.biology.elements
    :members:
 
+.. automodule:: transnet.organisms
+   :members:
+
 
 Visualization
 -------------
@@ -67,6 +70,9 @@ Visualization
    :members:
 
 .. automodule:: transnet.visualization.interactive
+   :members:
+
+.. automodule:: transnet.visualization.palette
    :members:
 
 

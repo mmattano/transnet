@@ -1,36 +1,47 @@
 .. _motrpac-study:
 
-MoTrPAC: six tissues, one network
-=================================
+MoTrPAC: endurance training in six rat tissues
+==============================================
 
-The MoTrPAC endurance-training study measured transcriptome, proteome and
-metabolome across rat tissues after 1, 2, 4 and 8 weeks of treadmill training.
-One shared interactome carries six different responses, so the tissues are
-directly comparable.
+.. list-table::
+   :widths: 22 78
+
+   * - **Question**
+     - Endurance training changes many tissues at once. Do they respond
+       through the same regulatory mechanisms, and how much of the response
+       lies in enzyme modification rather than enzyme amount?
+   * - **System**
+     - Rats trained on a treadmill for 1, 2, 4 and 8 weeks, against sedentary
+       controls; gastrocnemius muscle, heart, liver, kidney, lung and cortex
+   * - **Layers**
+     - Transcriptome, proteome and metabolome in every tissue;
+       phosphorylation sites in every tissue; acetylation and ubiquitination
+       sites in heart and liver
+   * - **Data**
+     - :ref:`MoTrPAC Study Group 2024 <ref-motrpac2024>`, *Nature*
+   * - **Network**
+     - The organism-wide rat network, one copy per tissue
+   * - **Notebook**
+     - :doc:`studies/motrpac_rat`, with every table and figure
+
+This page is the summary. Run the analysis with:
 
 .. code-block:: bash
 
-    # once: the rat network, alongside mouse, human, yeast and E. coli
+    # once: the rat network
     python maintenance/build_networks.py --organisms rat --brenda
 
     python notebooks/studies/motrpac_rat.py
 
-Every number and figure below comes from that notebook; rerun it and
-``python maintenance/refresh_doc_figures.py`` to bring this page up to date.
-
-.. tip::
-
-   This page is the summary. :doc:`The full notebook <studies/motrpac_rat>` runs
-   every analysis in the catalogue on this data, with all of its tables and
-   figures: the factor analyses read through the network, the regulatory motifs,
-   the structural vulnerability and the convergence null.
+Every number and figure below comes from that notebook. After a rerun,
+``python maintenance/refresh_doc_figures.py`` copies the figures here.
 
 
 The design, and where direction comes from
 ------------------------------------------
 
-MoTrPAC distributes a time-course ANOVA, which says *that* a molecule responded
-and not which way. The analysis therefore computes its own contrast from the
+MoTrPAC distributes a time-course test (an ANOVA), which says *that* a molecule
+responded but not in which direction. The analysis therefore computes its own contrast from the
 normalised data: each training timepoint against its sedentary controls, as the
 mean of the within-sex differences, with a Welch test on sex-centred values and
 Benjamini-Hochberg correction. ``--contrast`` selects the timepoint; 8 weeks is
@@ -38,11 +49,11 @@ the default and is what this page reports.
 
 The rat network is the organism-wide one in ``data/rat/latest``, the same
 artefact as for every other organism, built from KEGG, UniProt, STRING,
-ChIP-Atlas (``rn6``) and BRENDA. Each tissue gets its own copy with its own
-response mapped on: the wiring is shared, the regulation is not.
+ChIP-Atlas (``rn6``) and BRENDA. Each tissue is mapped onto its own copy: the
+network is shared, the measured response is not.
 
-The rat network holds 74,363 molecules and 258,015 typed relationships, of
-which **55% cross between layers**. Mapping is uneven, and that limit runs
+The rat network holds 74,363 molecules and 258,015 edges, of which **55 %
+connect two different layers**. Mapping is uneven, and that limit runs
 through everything below: of the features each
 tissue measures, about 88% of transcripts and 35% of proteins reach the
 network, but only ~18% of metabolites.
@@ -50,12 +61,12 @@ network, but only ~18% of metabolites.
 Modification sites
 ------------------
 
-MoTrPAC measures three post-translational modifications beside protein
-abundance. Each says something different about an enzyme whose amount did or did
-not change: phosphorylation its activity state, in every tissue here;
-ubiquitination whether it is being degraded; acetylation the mitochondrial
-enzyme regulation exercise is expected to act on. Acetylation and ubiquitination
-were measured in heart and liver only.
+Besides protein amounts, MoTrPAC measures three protein modifications, and each
+says something different about an enzyme: phosphorylation often switches its
+activity on or off; ubiquitination marks it for degradation; acetylation
+regulates many mitochondrial enzymes, which training is expected to affect.
+Phosphorylation was measured in every tissue here, acetylation and
+ubiquitination in heart and liver only.
 
 .. list-table::
    :header-rows: 1
@@ -134,19 +145,19 @@ were measured in heart and liver only.
    Changed modification sites per tissue. Bars to the right count sites that
    rose, to the left sites that fell.
 
-The unit is a site, not a protein. Each one becomes its own node with an edge
-into the protein it sits on, and several sites on one protein stay separate,
-because they can move in opposite directions. The edge is unsigned: whether more
-phosphorylation at a given site raises or lowers catalytic activity is
-site-specific and not recorded, so the direction of the site and its effect on
-the reaction are reported separately. Between 7,000 and 13,000 sites per tissue
-reach a protein in the network.
+These assays measure sites, not proteins. Each site becomes its own node with an
+edge to the protein it sits on, and several sites on one protein stay separate,
+because they can move in opposite directions. The edge has no sign: whether
+phosphorylation at a given site raises or lowers the enzyme's activity is rarely
+known, so the direction the site moved and its effect on the reaction are
+reported separately. Between 7,000 and 13,000 sites per tissue attach to a
+protein in the network.
 
 Enzyme amount against enzyme modification
 -----------------------------------------
 
-The reactions worth separating out are those where the enzyme's amount held
-steady while its modification state moved. An abundance-only reading calls them
+The important reactions are those whose enzyme amount did not change while its
+phosphorylation did. An analysis of protein amounts alone would call them
 unregulated.
 
 .. list-table::
@@ -188,10 +199,10 @@ transfer reactions, and both isocitrate dehydrogenase steps of the TCA cycle.
 Pyruvate kinase carries a changed site too, alongside the metabolite axis
 already reported for it.
 
-``phospho_axis_effect`` is 0 throughout, because the edges are unsigned. The
-analysis reports that these enzymes are phospho-regulated and which way the sites
-moved, not what that does to catalysis. Signing them needs site-level annotation
-the network does not have.
+``phospho_axis_effect`` is 0 throughout, because the site edges have no sign.
+The analysis reports that these enzymes are regulated by phosphorylation and
+which way the sites moved, but not whether that speeds the reaction up or slows
+it down, which would need site-level annotation the network does not have.
 
 Which axis regulates each reaction
 ----------------------------------
@@ -243,9 +254,10 @@ Which axis regulates each reaction
      - 86
      - 52 (18 enzymes)
 
-The tissues differ in kind as well as in amount. Heart, liver and
-gastrocnemius regulate a large share of their reactions through metabolites;
-cortex and lung, whose metabolomes barely move, are enzyme-driven by default.
+The tissues differ in the kind of regulation, not only in its amount. Heart,
+liver and gastrocnemius regulate a large share of their reactions through
+metabolites; in cortex and lung, whose metabolomes barely change, the enzyme
+axis dominates by default.
 Within the enzyme axis, the split between transcriptional and
 post-transcriptional control is just as uneven: in heart 325 of 749
 enzyme-axis reactions have the transcript moving too, in liver only 35 of 494.
@@ -253,17 +265,40 @@ enzyme-axis reactions have the transcript moving too, in liver only 35 of 494.
 .. figure:: figures/motrpac/axes_by_tissue.png
    :width: 100%
 
-Aggregated over the trained muscle's 1,190 regulated reactions, 51% carry a
-changed enzyme and 56% a changed metabolite, so the two axes overlap rather
-than divide the reactions between them. 4.4% are controversial.
+Of the trained muscle's 1,190 regulated reactions, 51 % have a changed enzyme
+and 56 % a changed metabolite, so the two axes overlap rather than divide the
+reactions between them; 4.4 % are controversial. Most enzyme-axis calls in
+muscle rest on the protein alone (671), and 159 on protein and transcript
+together.
 
-**Do the changed metabolites regulate anything?** In no tissue are they
-enriched for regulators. In trained muscle 13 of 19 changed metabolites act on
-an enzyme, but so do 66% of all measured metabolites (q = 0.75); heart 8 of 15
-against 64% (q = 0.89); liver 8 of 16 against 62% (q = 0.91). With BRENDA
-included, most measured metabolites are an annotated effector of something, so
-this test has little room to show enrichment. The named regulators are worth
-following individually; the set as a whole shows nothing.
+Grouped by KEGG pathway, fatty-acid synthesis and breakdown in muscle change
+mainly through their metabolites, while the synthesis of unsaturated fatty
+acids is split: 11 of its 25 regulated reactions are controversial, with more
+enzyme but metabolites pushing the reaction down.
+
+.. figure:: figures/motrpac/regulation_axes_SKM_GN.png
+   :width: 100%
+
+   Gastrocnemius after 8 weeks: regulated reactions per KEGG pathway. Left, the
+   enzyme axis; middle, the metabolite axis (red speeds reactions up, blue
+   slows them down); right, the fraction where the two axes disagree.
+
+.. figure:: figures/motrpac/controversial_SKM_GN.png
+   :width: 100%
+
+   Gastrocnemius: the controversial reactions, grouped by enzyme. Each bar is
+   one measured molecule's push on the reaction; yellow is the enzyme axis,
+   pink the metabolite axis.
+
+**Do the changed metabolites regulate enzymes?** In no tissue are they enriched
+for known regulators. In trained muscle 13 of 19 changed metabolites regulate an
+enzyme, but so do 66 % of all measured metabolites (q = 0.75); in heart 8 of 15
+against 64 % (q = 0.89); in liver 8 of 16 against 62 % (q = 0.91). With BRENDA
+included, most measured metabolites regulate some enzyme, so the test has little
+room to show enrichment. The individual regulators are still worth following up.
+
+.. figure:: figures/motrpac/metabolite_regulators_SKM_GN.png
+   :width: 100%
 
 The trans-omic view of the trained muscle
 -----------------------------------------
@@ -328,12 +363,13 @@ Is each protein change transcriptional?
      - 108
      - 0.37
 
-"Protein only" is partly a power artefact, since in liver only 29 transcripts
-passed the threshold at all. The column to read is **beyond transcript**: a direct test of protein change minus transcript change with
-standard errors, which needs no threshold. It holds up in every tissue, most
-strongly in trained muscle (108 proteins). The caveat travels with the number:
-it assumes the two platforms report fold changes on comparable scales, and
-isobaric ratio compression makes that conservative.
+The size of the "protein only" class depends partly on statistical power: in
+liver only 32 transcripts passed the threshold at all. The column to read is
+**beyond transcript**, a direct test of whether the protein changed more than
+its transcript, using standard errors and no threshold. It finds such proteins
+in every tissue, most in trained muscle (108). The test assumes both platforms
+report fold changes on comparable scales; the isobaric labelling of the
+proteome compresses ratios, which makes a positive result conservative.
 
 .. figure:: figures/motrpac/concordance_SKM_GN.png
    :width: 100%
@@ -341,17 +377,17 @@ isobaric ratio compression makes that conservative.
 Does ubiquitination explain the proteins that changed alone?
 ------------------------------------------------------------
 
-"Protein changed, transcript did not" is the largest class in every tissue, and
-the usual explanations are translation rate and degradation. Ubiquitination is
-the one of those MoTrPAC measures, so the question can be asked rather than left
-open.
+"Protein changed, transcript did not" is the largest class in every tissue.
+The usual explanations are changes in translation rate or in protein
+degradation. MoTrPAC measures ubiquitination, the signal for degradation, so
+this can be tested.
 
-It does not explain the class. In heart, 4.6% of the protein-only proteins carry
-a changed ubiquitination site, against 5.6% of the concordant ones; in liver the
-figure is 0% in both. With 43 changed ubiquitin sites in heart and 9 in liver
-there is nothing here to account for several hundred proteins. The reading is
-that this assay does not explain the protein-only class at eight weeks, not that
-degradation is uninvolved.
+Ubiquitination does not explain the class. In heart, 4.6 % of the protein-only
+proteins carry a changed ubiquitination site, against 5.6 % of the concordant
+ones; in liver, 0 % of both. With 43 changed ubiquitination sites in heart and 9
+in liver, this assay cannot account for several hundred proteins. The
+conclusion is that it does not explain the protein-only class at eight weeks,
+not that degradation plays no part.
 
 Acetylation, against the mitochondrial claim
 --------------------------------------------
@@ -366,33 +402,53 @@ even in both.
 Timing, hubs and the comparison between tissues
 -----------------------------------------------
 
-**Response time.** Only gastrocnemius shows an association between connectivity
-and response time (Spearman :math:`\rho` = +0.17, p = 3.3e-08), and it runs the
-*opposite* way to :ref:`Morita et al. <ref-morita2025>`: the best-connected molecules respond last.
-In every tissue the layers order as metabolome, then transcriptome, then
-proteome.
+**Response time.** In gastrocnemius, the half-response times over the four
+training weeks are significantly associated with the number of connections, but
+in the *opposite* direction to :ref:`Morita et al. <ref-morita2025>`: the
+best-connected molecules respond last. The transcriptome responds first (median
+2.3 weeks), then the proteome (2.9) and the metabolome (3.1).
 
-**Hubs.** The molecules linking most layers within a response are metabolites
-where the metabolome moved (CoA and putrescine in muscle, NADPH and NADP+ in
-liver, ATP and CoA in heart) and proteins where it did not (glutathione
-transferases in kidney). Five molecules are hubs in more than one tissue.
+.. figure:: figures/motrpac/temporal_structure_SKM_GN.png
+   :width: 80%
 
-**Tissues compared as networks.** Sharing by typed regulatory edge is low
-throughout (edge Jaccard ≤ 0.33): heart and gastrocnemius share 0.16, cortex
-and lung 0.33, and that last pair share it by both barely responding. **30
-molecules respond in opposite directions in different tissues**, among them
-fructose-1,6-bisphosphatase and hypotaurine (heart down, liver up). A shared
-molecule list would report these as "responsive in both".
+**Hubs.** The molecules with the most connections to other layers are
+metabolites in tissues whose metabolome changed (CoA in muscle, NADPH and NADP+
+in liver, ATP and CoA in heart) and proteins where it did not (glutathione
+transferases in kidney, heat-shock proteins in lung and cortex). Four
+heat-shock and chaperone proteins are hubs in three tissues each.
+
+.. figure:: figures/motrpac/transomic_hubs_SKM_GN.png
+   :width: 90%
+
+   Gastrocnemius: molecules ranked by connections to other layers.
+
+**Tissues compared as networks.** The tissues share few edges (Jaccard index
+at most 0.31). Heart and gastrocnemius share 0.16. Cortex and lung share 0.31,
+but only because both barely respond: their few responsive edges are the same
+protein interactions. **30 molecules respond in opposite directions in
+different tissues**, among them fructose-1,6-bisphosphatase and hypotaurine
+(down in heart, up in liver). A comparison of molecule lists would count these as
+"responsive in both".
 
 .. figure:: figures/motrpac/edge_jaccard.png
    :width: 70%
 
+   The Jaccard index of the responsive edges for each pair of tissues.
+
+.. figure:: figures/motrpac/closest_tissues.png
+   :width: 100%
+
+   The most similar pair of tissues in detail: edges kept, gained and lost by
+   edge type, and the molecules that changed in opposite directions.
+
 Signed paths, and propagation from the upper layers
 ---------------------------------------------------
 
-Two ways of asking whether the layers above the metabolome predict it: trace
+Two ways of asking whether the enzyme layers predict the metabolome: trace
 signed paths to each changed metabolite, or propagate the changed genes and
-proteins forward along signed edges and read off what arrives.
+proteins forward along signed edges and read off what arrives. Paths start at
+the proteome; the phosphosites above it have unsigned edges and cannot predict
+a direction.
 
 .. list-table::
    :header-rows: 1
@@ -432,18 +488,26 @@ proteins forward along signed edges and read off what arrives.
 .. figure:: figures/motrpac/regulatory_paths.png
    :width: 100%
 
-   Trained muscle: each path's prediction against the measurement.
+   Trained muscle: the best-supported paths, each molecule coloured by its
+   measured change.
 
-Neither beats chance in any tissue once the metabolites are counted once each
-rather than once per path (trained muscle, the best case: 9 of 13, p = 0.27).
-Metabolome coverage is the binding constraint: about 220 metabolites on the
-network per tissue, of which one or two dozen change.
+.. figure:: figures/motrpac/downstream_influence_SKM_GN.png
+   :width: 100%
+
+   Trained muscle: predicted score from propagation against measured
+   direction, per metabolite.
+
+Neither method beats chance in any tissue once each metabolite is counted once
+rather than once per path (trained muscle, the best case: 9 of 13 by paths,
+p = 0.27; 15 of 18 by propagation). Metabolome coverage is the limit: about 230
+metabolites per tissue are on the network, and one or two dozen of them
+change.
 
 The wiring itself
 -----------------
 
-Three readings of the network rather than of the data through it, and the one
-place where six responses on **one** interactome can be compared directly.
+Three analyses of the structure of each responsive network. Because all six
+tissues are mapped onto one network, they can be compared directly.
 
 .. list-table::
    :header-rows: 1
@@ -457,56 +521,68 @@ place where six responses on **one** interactome can be compared directly.
    * - HEART
      - 2
      - 366
-     - 9.9 (z = +15.1)
+     - 14.2 (z = +10.0)
      - Eef2, Prkn
    * - SKM_GN
      - 6
      - 341
-     - 17.6 (z = +7.6)
-     - Mrps7, Etfdh
+     - 13.9 (z = +8.9)
+     - Flnc, Mrps7
    * - LIVER
      - 0
      - 226
-     - 14.1 (z = +6.6)
-     - Cycs, Mrps26
+     - 16.8 (z = +4.7)
+     - Mrps26, Cycs
    * - KIDNEY
      - 6
      - 14
-     - 0.1 (z = +43.4)
-     - Got1, Maob
+     - 0.3 (z = +6.6)
+     - Hsp90aa1, Hspd1
    * - CORTEX / LUNG
      - 0
      - 0
-     - 0 / 3.1
-     - --
+     - 0 / 0.8
+     - -- / Hsph1
 
-**Motifs.** Product inhibition, where a reaction is regulated by the metabolite
-it makes, is found from the wiring rather than assumed: six instances in trained
-muscle and in kidney, two in heart. These are the reactions that can slow while their
-enzyme rises. No feed-forward motif survives the requirement that the
-transcription factor itself responded, which is a statement about ChIP-Atlas's
-rat coverage rather than about exercise.
+The expected counts come from 100 random reassignments per tissue, so they vary
+somewhat between runs; the conclusion does not.
 
-**Convergence.** Every responding tissue converges on shared reactions far
-more than chance allows: holding the network and the number of changed
-molecules per layer fixed and shuffling *which* molecules changed, heart
-expects 10 convergent reactions and has 366. This is the claim the whole
-catalogue rests on, tested rather than assumed.
+**Motifs.** Product inhibition, where a reaction is slowed by its own product,
+is found from the signed wiring: six instances in trained muscle and in kidney,
+two in heart. These are reactions that can slow down while their enzyme
+increases. No feed-forward motif is found, because the rule requires the
+transcription factor itself to respond, and the rat ChIP-Atlas data cover few
+factors.
 
-**Vulnerability.** The molecules whose removal splits the response into
-disconnected pieces differ by tissue: the translation elongation factor Eef2
-and the ubiquitin ligase Prkn in heart, mitochondrial ribosomal proteins and
-the electron-transfer flavoprotein dehydrogenase Etfdh in muscle, cytochrome c
-in liver. They are where one layer's response reaches another through a single
-route.
+**Convergence.** In every tissue that responds, changed enzymes and changed
+metabolites meet at many more reactions than chance would produce: heart has
+366, against about 14 expected when the changed molecules are reassigned at
+random.
+
+**Weak points.** The molecules whose removal would split the response differ by
+tissue: the elongation factor Eef2 and the ubiquitin ligase Prkn in heart, the
+filament protein Flnc and a mitochondrial ribosomal protein in muscle, and
+cytochrome c in liver. Each is the single route by which part of the response
+connects to the rest.
+
+.. figure:: figures/motrpac/regulatory_motifs_SKM_GN.png
+   :width: 70%
+
+.. figure:: figures/motrpac/convergence_null_SKM_GN.png
+   :width: 70%
+
+   Gastrocnemius: convergent reactions under random reassignment (histogram)
+   and the real count (line).
+
+.. figure:: figures/motrpac/structural_vulnerability_SKM_GN.png
+   :width: 90%
 
 Compared with the consortium's own analysis
 -------------------------------------------
 
 The consortium's paper (:ref:`MoTrPAC Study Group 2024 <ref-motrpac2024>`)
-reports genome-wide, multi-tissue patterns; the network
-reading agrees with three of them and takes the fourth down to individual
-reactions.
+reports genome-wide patterns across tissues. The network analysis agrees with
+three of them and examines the fourth enzyme by enzyme.
 
 .. list-table::
    :header-rows: 1
@@ -532,9 +608,9 @@ reactions.
        subunits move *up*, while heart has 2 of 12 and liver 5 of 12. The
        consortium's enrichment score and the reaction-level reading diverge
 
-"Mitochondrial biogenesis" in the paper is a statement about gene sets. The
-network says which reactions were regulated and through which axis, and the two
-readings disagree in heart and liver.
+In the paper, "mitochondrial biogenesis" is a statement about enriched gene
+sets. The network says which enzymes changed, and the two disagree for heart and
+liver.
 
 .. figure:: figures/motrpac/cross_tissue_changes.png
    :width: 100%
@@ -545,84 +621,85 @@ readings disagree in heart and liver.
 Factors, read through the network
 ---------------------------------
 
-The same NMF factorisation any multi-omics toolbox would fit, but each factor
-is then read *on the network* rather than only against the design.
+An NMF factor model, as other multi-omics tools fit, with each factor then read
+*on the network* as well as against the design.
 
-**Are the layers from the same animals?** This is checked rather than assumed.
-Correlating each gene's transcript with its protein across the 47 animals gives
-a mean of 0.030 where the shuffled pairing gives 0.000 (p = 0.002 over 1,972
-matched genes). The layers are paired, so a joint factorisation is valid.
+**Are the layers from the same animals?** This is checked, not assumed.
+Correlating each gene's transcript with its protein across the animals of a
+group gives a mean of 0.030, against 0.000 under shuffled pairings (p = 0.002,
+1,972 genes). The layers are paired, so a joint factor model is valid.
 
 .. figure:: figures/motrpac/factor_scores.png
    :width: 100%
 
    Six factors across 47 animals, by timepoint and sex.
 
-Every factor mixes timepoint with sex, and three carry an interaction. The
-robustness check separates them by *what* they capture:
+Every factor mixes time point with sex. The readings separate them:
 
 .. list-table::
    :header-rows: 1
-   :widths: 12 20 22 22 24
+   :widths: 12 22 20 24 22
 
    * - Factor
-     - Strongest term
-     - Verdict
-     - Cross-layer overlap
-     - Network coherence
+     - Strongest term (η²)
+     - Carried by
+     - Cross-layer overlap vs null
+     - Direct links vs chance
    * - Factor1
-     - sex
+     - sex (0.16)
      - within-group
-     - q = 0.012
-     - 1.77x, q = 0.096
+     - 0.198 vs 0.159, q = 0.089
+     - 0.84x, q = 0.70
    * - Factor2
-     - timepoint
+     - time point (0.63)
      - between-group
-     - q = 0.031
-     - 1.21x, q = 0.31
+     - 0.173 vs 0.139, q = 0.149
+     - 1.77x, q = 0.096
    * - Factor3
-     - sex
+     - sex (0.40)
      - within-group
-     - q = 0.050
-     - 0.84x, n.s.
+     - 0.227 vs 0.150, q = 0.059
+     - 1.60x, q = 0.096
    * - Factor4
-     - timepoint x sex
+     - time point (0.59), with sex interaction (0.46)
      - between-group
-     - q = 0.019
-     - 1.30x, q = 0.22
+     - 0.221 vs 0.170, q = 0.079
+     - 1.13x, q = 0.43
    * - Factor5
-     - sex
+     - time point (0.42)
      - within-group
-     - q = 0.014
-     - 1.44x, q = 0.14
+     - 0.253 vs 0.174, q = 0.059
+     - 1.50x, q = 0.12
    * - Factor6
-     - sex (:math:`\eta^2` = 0.813)
+     - sex (0.81)
      - between-group
-     - q = 0.022
-     - 1.09x, n.s.
+     - 0.194 vs 0.158, q = 0.149
+     - 1.62x, q = 0.096
 
-Three readings, and what each one adds:
+What each reading adds:
 
-* **Cross-layer overlap** asks whether a factor's top features in one layer sit
-  near its top features in another, against a layer-matched null. Every factor
-  passes (q = 0.012-0.050): the factorisation is finding coordinated
-  cross-layer structure, not six independent single-layer signals.
-* **Network coherence** asks the stricter question: are a factor's top features
-  connected to each other? No factor passes correction, 1.77x at best with
-  q = 0.096. Coordinated across layers, but not a module.
-* **The pairing verdict** separates factors that distinguish the design groups
-  from those that vary within them. Factor6 is almost entirely sex
-  (:math:`\eta^2` = 0.813). Sex is the largest source of structure in this
-  cohort, which is the consortium's own headline seen from the other side.
+* **Cross-layer overlap** asks whether a factor's top molecules in different
+  layers sit in the same part of the network, compared with random molecules
+  from the same layers. Every factor overlaps more than random molecules do,
+  but none is significant after correction (q = 0.059-0.149).
+* **Direct links** asks the stricter question of whether a factor's top
+  molecules are connected to each other. None passes correction either (1.77x
+  at best, q = 0.096). The factors are coordinated across layers, but none is a
+  tightly connected module.
+* **The pairing verdict** separates factors carried by the design groups from
+  those carried by differences between animals. Factor6 is almost entirely sex
+  (η² = 0.81): sex is the largest source of structure in this cohort, which
+  matches the consortium's finding that most of the training response differs
+  between the sexes.
 
 .. figure:: figures/motrpac/factor_overview.png
    :width: 100%
 
-The network reading also says *where* a factor lives. Factor5's metabolite
-loadings concentrate on trimethylamine N-oxide, hypotaurine, hippurate,
-alpha-muricholate and glycocholate: microbial and bile-acid metabolites, a
-gut-derived axis. It is legible because the loadings were read against named
-network nodes rather than feature indices.
+The network also says *where* a factor lies. Factor5, the factor with the
+largest cross-layer overlap, concentrates on trimethylamine N-oxide,
+hypotaurine, alpha-muricholate and hippurate: microbial and bile-acid
+metabolites, which point to a signal from the gut. This can be read directly
+because the loadings are placed on named network nodes.
 
 .. figure:: figures/motrpac/network_Factor5.png
    :width: 100%
@@ -632,29 +709,32 @@ network nodes rather than feature indices.
 .. figure:: figures/motrpac/network_Factor6.png
    :width: 100%
 
-   Factor6, the sex factor, for contrast: a different neighbourhood entirely.
+   Factor6, the sex factor, for comparison: a different part of the network.
 
 What does not work on this data
 -------------------------------
 
-* **Signed paths (**:ref:`signed regulatory paths <signed-paths>`\ **) beat chance in no tissue.** Muscle is
-  the best at 9 of 13 metabolites (69%, p = 0.27). Scored per path rather than
-  per molecule this looked overwhelming (p = 4e-17); it was one hub metabolite
-  reached by dozens of paths sharing most of their steps. See :ref:`signed regulatory paths <signed-paths>`
-  for the two rules that stop that.
-* **Transcription-factor inference is limited by coverage**: only 32 factors
-  are testable on the rat ``rn6`` ChIP-Atlas data. Two tissues implicate any --
-  heart (Arnt and Mlxipl, both with targets up) and kidney (Arnt, Crtc2, Sp1,
-  Sox10 among seven). Four tissues implicate none, which says more about
-  ChIP-Atlas's rat coverage than about the biology.
+* **Signed paths beat chance in no tissue** (see
+  :ref:`signed regulatory paths <signed-paths>`). Muscle is the best case, at 9
+  of 13 metabolites (69 %, p = 0.27). Counted per path instead of per molecule,
+  the same result would have looked overwhelming (p = 4e-17), because one
+  well-connected metabolite is reached by dozens of paths that share most of
+  their steps.
+* **Transcription-factor inference is limited by coverage.** Only 35 factors
+  have enough rat ChIP-Atlas data to be tested in muscle, and none is
+  implicated. This reflects ChIP-Atlas's coverage of the rat genome more than
+  the biology.
+
+  .. figure:: figures/motrpac/tf_activity_SKM_GN.png
+     :width: 80%
 * **Changed metabolites are not enriched for regulators** in any tissue
-  (q ≥ 0.75 throughout) -- the numbers are above, under the regulation axes.
-* **No feed-forward motif** survives requiring the transcription factor itself
-  to have responded, and **cortex and lung show no convergence at all**: with
-  46 and 292 regulated reactions and metabolomes that barely move, there is
-  nothing for the cross-layer analyses to work on.
+  (q ≥ 0.58 throughout).
+* **No feed-forward motif** is found, and **cortex and lung show no
+  convergence at all**: with 46 and 292 regulated reactions and metabolomes that
+  barely change, the cross-layer analyses have nothing to work on.
 
 .. seealso::
 
-   :doc:`brown_adipocytes` runs the same catalogue on a signed mouse time course,
-   and :doc:`published_study` checks it against published conclusions.
+   :doc:`brown_adipocytes` runs the same catalogue on a mouse cell time course,
+   and :doc:`obese_liver_panel` and :doc:`liver_timecourse` check it against
+   published conclusions.

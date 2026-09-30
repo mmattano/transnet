@@ -1,24 +1,29 @@
 # %% [markdown]
-# # MoTrPAC: six tissues on one network
+# # MoTrPAC: endurance training in six rat tissues
 #
-# The MoTrPAC consortium trained rats on a treadmill for 1, 2, 4 and 8 weeks
-# and profiled transcriptome, proteome and metabolome across tissues
+# **Question.** Endurance training changes many tissues at once. Do they
+# respond through the same regulatory mechanisms, and how much of the response
+# lies in enzyme modification rather than enzyme amount?
+#
+# **Data.** The MoTrPAC consortium trained rats on a treadmill for 1, 2, 4 and 8
+# weeks and measured transcriptome, proteome and metabolome in many tissues,
+# with phosphorylation sites in every tissue used here and acetylation and
+# ubiquitination sites in heart and liver
 # ([*Nature* 629:174-183, 2024](https://doi.org/10.1038/s41586-023-06877-w)).
-# It is the case where trans-omics earns its keep by comparison: **one shared
-# interactome, six different responses on it**.
+# Six tissues are mapped onto one rat network, so their responses can be
+# compared directly: **one network, six different responses on it**.
 #
-# MoTrPAC distributes a time-course ANOVA, whose F statistic has no sign, so
-# the direction is computed here from the normalised data: each timepoint
-# against its sedentary controls, as the mean of the within-sex differences,
-# with a Welch test on sex-centred values.
+# MoTrPAC distributes a time-course test (an ANOVA) whose statistic says that a
+# molecule changed but not in which direction. The direction is therefore
+# computed here from the normalised data: each time point against its sedentary
+# controls, as the mean of the differences within each sex, with a Welch test on
+# values centred per sex.
 #
 # Needs the rat network: `python maintenance/build_networks.py --organisms rat
 # --brenda`.
 
 # %%
 import json
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -32,7 +37,6 @@ from transnet import (
     responsive_subnetwork,
     trace_regulatory_paths,
     transcription_factor_activity,
-    transomic_hubs,
 )
 from transnet import (                      # noqa: E402  (grouped for readability)
     cross_layer_connectivity,
@@ -66,15 +70,19 @@ print(f"{network.number_of_nodes():,} molecules, {network.number_of_edges():,} r
 print("tissues:", ", ".join(tissues))
 
 # %%
+from transnet.visualization import plot_layer_connectivity
+
 connectivity = cross_layer_connectivity(network)
 print(f"{connectivity['cross_layer_fraction']:.0%} of edges cross between layers")
-connectivity["matrix"]
+layer_figure = plot_layer_connectivity(connectivity, title="Rat network: edges between layers")
+plt.show()
 
 # %% [markdown]
 # ## Identifiers
 #
-# Transcripts are Ensembl and proteins RefSeq, while the network uses Entrez
-# and UniProt. The maps are cached, since they are thousands of lookups.
+# The transcripts are identified by Ensembl ids and the proteins by RefSeq
+# accessions, while the network uses Entrez ids and UniProt accessions. The
+# translations take thousands of lookups, so they are cached.
 
 # %%
 def cached_map(name, features, from_type, to_type):
@@ -106,7 +114,8 @@ id_map = {
 # %% [markdown]
 # ## Each tissue gets its own copy
 #
-# The wiring is shared; the response is not.
+# Every tissue is mapped onto its own copy of the same network: the network is
+# shared, the measured response is not.
 
 # %%
 graphs, mapped = {}, []
@@ -123,19 +132,28 @@ for tissue, tables in contrasts.items():
 pd.concat(mapped).reset_index(drop=True)
 
 # %% [markdown]
+# `layer_coverage` shows, for the focus tissue (gastrocnemius muscle), how
+# much of each network layer was measured and how much of it changed.
+
+# %%
+layer_coverage(graphs[TISSUE_FOCUS])
+
+# %% [markdown]
 # ## Modification sites
 #
-# MoTrPAC measures three post-translational modifications beside protein
-# abundance, and each answers a different question about an enzyme whose amount
-# did or did not change. Phosphorylation is its activity state, in every tissue
-# here. Acetylation and ubiquitination are heart and liver only.
+# Besides protein amounts, MoTrPAC measures three protein modifications, and
+# each says something different about an enzyme. Phosphorylation often switches
+# an enzyme's activity; it was measured in every tissue here. Acetylation and
+# ubiquitination (which marks proteins for degradation) were measured in heart
+# and liver only.
 #
-# The unit is a site, not a protein, so each one becomes its own Signaling node
-# with an edge into the protein it sits on, and several sites on one protein stay
-# separate because they can move opposite ways. The edge is unsigned: whether
-# more phosphorylation at a given site raises or lowers catalytic activity is
-# site-specific and not recorded, so the direction of the site and its effect on
-# the reaction are reported separately.
+# These assays measure individual sites, not proteins. `map_modification_sites`
+# therefore adds each site as its own node in the Signaling layer, with an edge
+# to its protein; several sites on one protein stay separate because they can
+# move in opposite directions. The edge has no sign: whether phosphorylation at
+# a given site raises or lowers an enzyme's activity is rarely known. So the
+# direction the site moved and its effect on the reaction are reported
+# separately.
 
 # %%
 ptm_tables, ptm_reports = {}, []
@@ -159,14 +177,15 @@ ptm_summary = pd.DataFrame(ptm_reports).set_index(["assay", "tissue"])
 ptm_summary
 
 # %% [markdown]
-# Phosphorylation moves in every tissue. Ubiquitination barely moves at all:
-# 43 sites in heart and 9 in liver at q <= 0.05, against 490 and 489
-# phosphosites. Whatever degradation contributes to the training response, it is
-# not visible in these ubiquitin site counts at eight weeks.
+# Phosphorylation changes in every tissue. Ubiquitination hardly changes: 43
+# sites in heart and 9 in liver at q <= 0.05, against 490 and 489
+# phosphorylation sites. Whatever protein degradation contributes to the
+# training response, it does not show in these ubiquitination sites at eight
+# weeks.
 #
-# The sites attach to the Proteome nodes through the RefSeq-to-UniProt map the
-# proteome already uses, extended for the proteins only the modification assays
-# saw.
+# The sites are attached to the proteins through the same RefSeq-to-UniProt
+# translation as the proteome, extended to the proteins that only the
+# modification assays measured.
 
 # %%
 ptm_proteins = {p for table in ptm_tables.values() for p in table["protein"]}
@@ -185,8 +204,8 @@ for (tissue, assay), table in ptm_tables.items():
 pd.DataFrame(attached).set_index("tissue")
 
 # %% [markdown]
-# The three modifications beside each other, per tissue. Bars to the right count
-# sites that rose, to the left sites that fell.
+# The three modifications side by side, per tissue. Bars to the right count
+# sites that went up, bars to the left sites that went down.
 
 # %%
 from transnet.visualization import plot_layer_changes
@@ -226,18 +245,48 @@ axes = pd.DataFrame(rows).set_index("tissue")
 axes
 
 # %% [markdown]
-# The tissues differ in *kind*, not only in amount: heart, liver and
-# gastrocnemius regulate a large share of their reactions through metabolites,
-# while cortex and lung, whose metabolomes barely move, are enzyme-driven by
-# default.
+# The tissues differ in the *kind* of regulation, not only in its amount.
+# Tissues whose metabolome changed a lot regulate many reactions through
+# metabolites; in tissues whose metabolome barely changed, the enzyme axis
+# dominates by default.
+#
+# `plot_axis_composition` draws the table, one bar per tissue.
+
+# %%
+from transnet.visualization import plot_axis_composition
+
+composition = axes.reset_index().rename(columns={
+    "tissue": "contrast", "enzyme only": "enzyme_axis_only",
+    "metabolite only": "metabolite_axis_only", "both": "both_axes",
+})
+composition_figure = plot_axis_composition(composition, label="contrast")
+plt.show()
+
+# %% [markdown]
+# In gastrocnemius muscle, `gene_axis_evidence` shows what each enzyme-axis
+# call rests on, and `plot_controversial_reactions` shows the reactions where
+# the two axes pull in opposite directions.
+
+# %%
+focus_regulated = regulation[TISSUE_FOCUS][(regulation[TISSUE_FOCUS]["gene_axis"] != 0)
+                                           | (regulation[TISSUE_FOCUS]["metabolite_axis"] != 0)]
+focus_regulated["gene_axis_evidence"].value_counts(dropna=False).to_frame("reactions")
+
+# %%
+from transnet.visualization import plot_controversial_reactions
+
+controversial_figure = plot_controversial_reactions(
+    graphs[TISSUE_FOCUS], regulation[TISSUE_FOCUS], max_enzymes=6,
+    title=f"{TISSUE_FOCUS}: controversial reactions after {TIMEPOINT} of training")
+plt.show()
 
 # %% [markdown]
 # ## Enzyme amount against enzyme modification
 #
-# The regulation table now carries a phosphorylation axis beside the gene axis.
-# The reactions worth separating out are the ones where the enzyme's amount held
-# steady while its modification state moved: an abundance-only reading calls them
-# unregulated.
+# With the sites mapped, the regulation table has a phosphorylation axis beside
+# the gene axis. The important reactions are those whose enzyme amount did not
+# change while its phosphorylation did: an analysis of protein amounts alone
+# would call them unregulated.
 
 # %%
 phospho_rows = []
@@ -259,8 +308,8 @@ phospho_summary = pd.DataFrame(phospho_rows)
 phospho_summary.set_index("tissue")
 
 # %% [markdown]
-# The left block is the part a proteome alone cannot produce: reactions whose
-# enzyme amount held steady while its modification state moved.
+# The left part of each bar is what a proteome alone cannot show: reactions
+# whose enzyme amount stayed the same while its phosphorylation changed.
 
 # %%
 from transnet.visualization import plot_modification_axis
@@ -275,13 +324,14 @@ phospho_axis_figure = plot_modification_axis(
 plt.show()
 
 # %% [markdown]
-# `phospho_axis_effect` stays 0 throughout, because the edges are unsigned: the
-# analysis reports that these enzymes are phospho-regulated and in which
-# direction the sites moved, not what that does to catalysis. Signing them needs
-# site-level annotation the network does not have, and inventing it would put a
-# direction into every downstream path.
+# `phospho_axis_effect` stays 0 throughout, because the site edges have no
+# sign. The analysis reports that these enzymes are regulated by
+# phosphorylation and which way the sites moved, but not whether that speeds
+# the reaction up or slows it down. That would need site-level annotation that
+# the network does not have, and guessing it would put an invented direction
+# into every path through the reaction.
 #
-# The named reactions in the focus tissue:
+# The reactions in gastrocnemius muscle:
 
 # %%
 focus_table = regulation[TISSUE_FOCUS]
@@ -292,10 +342,29 @@ focus_phospho.head(12)[["reaction", "name", "phospho_axis",
 
 # %% [markdown]
 # ## Per-pathway balance, and the metabolites doing the regulating
+#
+# `kegg_reaction_pathways` assigns each reaction to its rat KEGG pathways, and
+# `regulation_axis_summary` counts, per pathway, the reactions each axis
+# activates or inhibits in gastrocnemius muscle.
 
 # %%
-balance = regulation_axis_summary(reaction_regulation_table(graphs[TISSUE_FOCUS]))
-balance.head(10)
+from transnet.api import kegg_reaction_pathways
+from transnet.visualization import plot_regulation_axes
+
+pathways = kegg_reaction_pathways(regulation[TISSUE_FOCUS]["reaction"], organism="rno")
+balance = regulation_axis_summary(regulation[TISSUE_FOCUS], pathway_map=pathways)
+balance.head(10)[["pathway", "n_reactions", "gene_activated", "gene_inhibited",
+                  "metabolite_activated", "metabolite_inhibited", "n_controversial"]]
+
+# %%
+axes_figure = plot_regulation_axes(
+    balance[balance["pathway"] != "unassigned"].head(15),
+    title=f"{TISSUE_FOCUS} after {TIMEPOINT}: regulation by pathway")
+plt.show()
+
+# %% [markdown]
+# Per tissue: how many changed metabolites are known allosteric regulators, and
+# whether that is more than among all measured metabolites.
 
 # %%
 rows = []
@@ -311,13 +380,48 @@ for tissue, graph in graphs.items():
     })
 pd.DataFrame(rows).set_index("tissue")
 
+# %%
+from transnet.visualization import plot_metabolite_regulators
+
+regulator_figure = plot_metabolite_regulators(
+    regulatory_role_enrichment(metabolite_regulatory_roles(graphs[TISSUE_FOCUS])),
+    title=f"{TISSUE_FOCUS}: changed metabolites that regulate enzymes")
+plt.show()
+
 # %% [markdown]
-# ## Signed paths, and whether the upper layers predict the metabolites
+# ## Transcription factors
+#
+# ChIP-Atlas has little binding data for the rat genome, so few factors have
+# enough measured targets to be tested at all. The result is reported for the
+# focus tissue with that limit in mind.
 
 # %%
-rows, traced_paths = [], {}
+from transnet.visualization import plot_tf_activity
+
+tf_table = transcription_factor_activity(graphs[TISSUE_FOCUS], min_targets=5)
+print(f"{len(tf_table)} factors testable, "
+      f"{int((tf_table['q_value'] <= 0.05).sum()) if len(tf_table) else 0} implicated "
+      f"at q <= 0.05")
+tf_figure = plot_tf_activity(tf_table, title=f"{TISSUE_FOCUS}: transcription factors")
+plt.show()
+
+# %% [markdown]
+# ## Signed paths, and whether the upper layers predict the metabolites
+#
+# For each tissue, path tracing and propagation predict the direction of each
+# changed metabolite from the changed transcripts and proteins (see the
+# *signed regulatory paths* walkthrough). Paths start at the proteome: the
+# mapped phosphosites form a Signaling layer above it, but their edges have no
+# sign, so they cannot predict a direction. The table counts how many
+# metabolites each method scores and how many it predicts correctly.
+
+# %%
+rows, traced_paths, influences = [], {}, {}
 for tissue, graph in graphs.items():
-    paths = trace_regulatory_paths(graph, target_layer="Metabolome", max_length=4,
+    # The phosphosites are a Signaling layer, which paths would otherwise start
+    # from; the question here is what the enzyme layers predict.
+    paths = trace_regulatory_paths(graph, source_layer="Proteome",
+                                   target_layer="Metabolome", max_length=4,
                                    max_paths=20000)
     traced_paths[tissue] = paths
     verdicts, agree, tested = path_verdicts(paths)
@@ -326,19 +430,21 @@ for tissue, graph in graphs.items():
              if d.get("layer") in ("Transcriptome", "Proteome")
              and d.get("regulated") and d.get("log2fc") is not None}
     influence = downstream_influence(graph, seeds, target_layer="Metabolome")
+    influences[tissue] = influence
     measured = influence[influence["observed"].fillna(0) != 0] if "observed" in influence else influence
     predicted = int(measured["agrees"].astype("boolean").fillna(False).sum()) \
         if "agrees" in measured and not measured.empty else 0
 
     rows.append({"tissue": tissue, "paths": len(paths),
                  "metabolites tested": tested, "predicted by paths": agree,
-                 "metabolites reached": len(measured), "predicted by propagation": predicted})
+                 "metabolites reached": len(measured), "predicted by propagation": predicted,
+                 "paths vs chance": versus_chance(agree, tested) if tested else "-"})
 pd.DataFrame(rows).set_index("tissue")
 
 # %% [markdown]
-# The trained muscle's paths, with what each predicts against what was measured.
-# This is how a chance-level rate should be read: the misses are visible one by
-# one rather than hidden in a percentage.
+# The paths in trained muscle, each coloured by the measured change of its
+# molecules. When the overall rate is close to chance, the figure shows the
+# wrong predictions one by one instead of hiding them in a percentage.
 
 # %%
 from transnet.visualization import plot_regulatory_paths
@@ -347,10 +453,18 @@ paths_figure = plot_regulatory_paths(traced_paths[TISSUE_FOCUS], graphs[TISSUE_F
                                      top_n=8)
 plt.show()
 
+# %%
+from transnet.visualization import plot_downstream_influence
+
+influence_figure = plot_downstream_influence(
+    influences[TISSUE_FOCUS], title=f"{TISSUE_FOCUS}: metabolites predicted from the "
+                                    f"enzyme layers")
+plt.show()
+
 # %% [markdown]
-# Neither beats chance in any tissue. Scored per path rather than per molecule
-# the first column would look overwhelming -- one hub metabolite reached by
-# dozens of overlapping paths -- which is why it is scored per molecule.
+# The predictions are scored once per metabolite. Scored per path, the rate
+# would look overwhelming, because one well-connected metabolite is reached by
+# dozens of overlapping paths and each would count as a separate success.
 
 # %% [markdown]
 # ## Is each protein change transcriptional?
@@ -373,21 +487,22 @@ for tissue, graph in graphs.items():
 pd.DataFrame(rows).set_index("tissue")
 
 # %% [markdown]
-# "Protein only" is partly a power artefact, since it depends on how many
-# transcripts passed the threshold at all. The column carrying the claim
-# is **beyond transcript**, a direct test of protein change minus transcript
-# change with standard errors, which needs no threshold. It assumes the two
-# platforms report fold changes on comparable scales; isobaric ratio
-# compression makes that conservative.
+# The size of the "protein only" class depends partly on statistical power:
+# on how many transcripts passed the significance threshold at all. The
+# column that supports a claim is **beyond transcript**: a direct test of
+# whether the protein changed more than its transcript, using the standard
+# errors, with no threshold. It assumes both platforms report fold changes on
+# comparable scales. The isobaric labelling used for the proteome compresses
+# ratios, which makes a positive result conservative.
 
 # %% [markdown]
 # ## Does ubiquitination explain the proteins that changed alone?
 #
-# "Protein changed, transcript did not" is the largest class in every tissue, and
-# the usual explanations are translation rate and degradation. Ubiquitination is
-# the one of those that MoTrPAC measures, in heart and liver, so the question can
-# be asked rather than left open: of the proteins that moved without their
-# transcript, how many carry a changed ubiquitination site?
+# "Protein changed, transcript did not" is the largest class in every tissue.
+# The usual explanations are changes in translation rate or in protein
+# degradation. MoTrPAC measures ubiquitination, the signal for degradation, in
+# heart and liver, so the question can be tested: of the proteins that changed
+# without their transcript, how many carry a changed ubiquitination site?
 
 # %%
 ubiquitin_rows = []
@@ -425,18 +540,18 @@ for tissue in MOTRPAC_PTM_ASSAYS["UBIQ"]:
 pd.DataFrame(ubiquitin_rows).set_index("tissue") if ubiquitin_rows else "no ubiquitin data"
 
 # %% [markdown]
-# With 43 changed ubiquitin sites in heart and 9 in liver there is nothing here
-# to explain a class of several hundred proteins. The honest reading is that this
-# assay does not account for the protein-only class at eight weeks, not that
-# degradation is uninvolved.
+# With 43 changed ubiquitination sites in heart and 9 in liver, this assay
+# cannot explain a class of several hundred proteins. The conclusion is that
+# ubiquitination sites do not account for the protein-only class at eight
+# weeks, not that degradation plays no part.
 
 # %% [markdown]
 # ## Acetylation and the mitochondrial claim
 #
-# The consortium reports increased mitochondrial biogenesis in muscle, heart and
-# liver. Mitochondrial enzyme activity is regulated by acetylation, and heart and
-# liver are the two tissues where MoTrPAC measured it, so the claim can be put
-# against the modification rather than against abundance alone.
+# The consortium reports increased mitochondrial biogenesis in muscle, heart
+# and liver. The activity of mitochondrial enzymes is regulated by acetylation,
+# which MoTrPAC measured in heart and liver, so the claim can be checked against
+# the modification and not only against protein amounts.
 
 # %%
 acetyl_rows = []
@@ -473,8 +588,20 @@ recurring = (shared.groupby("name")["tissue"].nunique().sort_values(ascending=Fa
              .rename("tissues").to_frame().query("tissues > 1"))
 recurring.head(10)
 
+# %%
+from transnet.visualization import plot_transomic_hubs
+
+hub_figure = plot_transomic_hubs(hub_tables[TISSUE_FOCUS],
+                                 title=f"{TISSUE_FOCUS}: molecules connecting layers")
+plt.show()
+
 # %% [markdown]
 # ## Tissues compared as networks
+#
+# `compare_transomic_networks` compares the responsive networks of two tissues.
+# The Jaccard index of their edges is the number of edges both contain divided
+# by the number in either: 1 means the same edges responded, 0 means none in
+# common.
 
 # %%
 jaccard = pd.DataFrame(index=tissues, columns=tissues, dtype=float)
@@ -489,11 +616,24 @@ for a in tissues:
 jaccard.round(2)
 
 # %% [markdown]
+# The comparison of the two most similar tissues in detail: which edge types
+# they share, and which molecules changed in opposite directions.
+
+# %%
+from transnet.visualization import plot_condition_comparison
+
+pairs = [(a, b) for i, a in enumerate(tissues) for b in tissues[i + 1:]]
+first, second = max(pairs, key=lambda pair: jaccard.loc[pair[0], pair[1]])
+closest = compare_transomic_networks(responsive_subnetwork(graphs[first]),
+                                     responsive_subnetwork(graphs[second]), first, second)
+comparison_figure = plot_condition_comparison(closest, first, second, graph=network)
+plt.show()
+
+# %% [markdown]
 # ## Timing across the training weeks
 #
-# Four contrasts of the same tissue against the same controls give each
-# molecule a trajectory over 1, 2, 4 and 8 weeks, and so a half-response time
-# on the network.
+# The four contrasts of the same tissue (1, 2, 4 and 8 weeks against the same
+# controls) give each molecule a time course, and so a half-response time.
 
 # %%
 weeks = {"1w": 1.0, "2w": 2.0, "4w": 4.0, "8w": 8.0}
@@ -520,12 +660,19 @@ structure = temporal_network_structure(timing)
 print(structure["degree_vs_thalf"]["interpretation"])
 structure["per_layer_thalf"]
 
+# %%
+from transnet.visualization import plot_temporal_structure
+
+timing_figure = plot_temporal_structure(timing, structure, time_unit="weeks",
+                                        title=f"{TISSUE_FOCUS}: connections against timing")
+plt.show()
+
 # %% [markdown]
 # ## The wiring, per tissue
 #
-# Six responses on one interactome: the motifs each tissue uses, and the
-# molecules each response hangs on, are directly comparable because the
-# network underneath is identical.
+# Because every tissue is mapped onto the same network, the wiring patterns
+# each response uses and the molecules each response depends on can be compared
+# directly.
 
 # %%
 from transnet import (
@@ -552,16 +699,42 @@ for tissue, graph in graphs.items():
 pd.DataFrame(rows).set_index("tissue")
 
 # %% [markdown]
-# The convergence column is the one to read against the null beside it: a
-# tissue with many changed molecules produces convergent reactions for free,
-# and the z-score says how much of it is more than that.
+# Read the convergence column against the chance expectation beside it. A
+# tissue with many changed molecules has many convergent reactions by chance
+# alone; the z-score says how far the real count exceeds that.
+#
+# The three figures below show gastrocnemius muscle.
+
+# %%
+from transnet.visualization import (
+    plot_convergence_null,
+    plot_regulatory_motifs,
+    plot_structural_vulnerability,
+)
+
+motif_figure = plot_regulatory_motifs(
+    regulatory_motifs(graphs[TISSUE_FOCUS], responsive_only=True),
+    title=f"{TISSUE_FOCUS}: regulatory motifs")
+plt.show()
+
+# %%
+convergence_figure = plot_convergence_null(
+    convergence_significance(graphs[TISSUE_FOCUS], n_randomisations=200),
+    title=f"{TISSUE_FOCUS}: convergence against chance")
+plt.show()
+
+# %%
+vulnerability_figure = plot_structural_vulnerability(
+    structural_vulnerability(responsive_subnetwork(graphs[TISSUE_FOCUS]), top_n=10),
+    title=f"{TISSUE_FOCUS}: molecules that hold the response together")
+plt.show()
 
 # %% [markdown]
 # ## Compared with the consortium's own analysis
 #
-# The *Nature* paper reports genome-wide, multi-tissue patterns. The network
-# reading agrees with three of them and adds a mechanism the paper's
-# pathway-level analysis does not reach.
+# The *Nature* paper reports genome-wide patterns across tissues. The network
+# analysis agrees with three of them, and adds reaction-level detail that the
+# paper's pathway-level analysis does not reach.
 #
 # | MoTrPAC (Nature 2024) | Here |
 # |---|---|
@@ -570,10 +743,10 @@ pd.DataFrame(rows).set_index("tissue")
 # | 67% of genes are tissue-specific | typed edge Jaccard between tissues, above |
 # | Increased mitochondrial biogenesis in muscle, heart and liver | checked directly below, at the level of individual reactions |
 #
-# The mitochondrial claim is the one worth testing, because "mitochondrial
-# biogenesis" in the paper is an enrichment statement about gene sets, while
-# the network can say which TCA and oxidative-phosphorylation *reactions* were
-# regulated and through which axis.
+# The mitochondrial claim is the one worth testing in detail. In the paper,
+# "mitochondrial biogenesis" is a statement about enriched gene sets; the
+# network can say which TCA-cycle and oxidative-phosphorylation *enzymes*
+# changed, and in which direction.
 
 # %%
 TCA_ENZYMES = ["Cs", "Aco2", "Idh2", "Idh3a", "Ogdh", "Sdha", "Sdhb", "Fh", "Mdh1", "Mdh2",
@@ -599,8 +772,9 @@ mitochondrial
 # %% [markdown]
 # ## Factors, read through the network
 #
-# The consortium's sex result is visible here as an inability to separate
-# training from sex: every factor mixes them.
+# The consortium found that most of the training response differs between the
+# sexes. Here this shows as factors that cannot separate training from sex:
+# every factor mixes the two.
 
 # %%
 from transnet.analysis.factors import (
@@ -621,13 +795,12 @@ print(f"{len(design)} animals with every layer; "
       + ", ".join(f"{l} {m.shape[1]:,}" for l, m in matrices.items()))
 design.groupby(["timepoint", "sex"]).size().rename("animals").to_frame()
 
-# %%
 # %% [markdown]
-# **Are the layers the same animals?** MoTrPAC keys every sample by animal, so
-# they should be -- and the data can confirm it: within a group, an animal whose
-# transcript of a gene runs high should tend to have that protein high too.
-# This is also the check's own validation: a dataset paired by design has to
-# pass.
+# **Are the layers from the same animals?** MoTrPAC labels every sample by
+# animal, so they should be, and the data can confirm it: within a group, an
+# animal with a high transcript level of a gene should also tend to have a high
+# level of that protein. This also validates the check itself, because a
+# dataset paired by design has to pass it.
 
 # %%
 transcripts, proteins = matched_transcript_protein(
@@ -652,10 +825,9 @@ summary = (association.pivot(index="factor", columns="term", values="partial_eta
 summary.round(3)
 
 # %% [markdown]
-# A factor that follows the design but whose top features are *not* connected
-# on the network is co-variation without a mechanism, which is the
-# distinction the network exists to make, and the one a factor model alone
-# cannot draw.
+# A factor that follows the design but whose top molecules are *not*
+# connected on the network shows molecules that vary together without a known
+# mechanism linking them. A factor model alone cannot make this distinction.
 
 # %% [markdown]
 # **Every factor across the design.** Each panel is one factor's scores by
@@ -689,12 +861,10 @@ overview_figure.savefig(FACTOR_OUT / "factor_overview.png", dpi=150, bbox_inches
 plt.show()
 
 # %% [markdown]
-# **Every factor on the network.** For each factor, the top features that the
-# network actually joins -- the ones behind its coherence score -- drawn in
-# the layered view with the reactions between them. This is where a factor
-# stops being a list of loadings and becomes a piece of biochemistry: which
-# enzymes, which of their transcripts, which metabolites of the reactions they
-# catalyse.
+# **Every factor on the network.** For each factor, the top molecules that are
+# connected on the network, drawn in layers with the reactions between them.
+# This turns a list of loadings into biochemistry: which enzymes, which of
+# their transcripts, and which metabolites of the reactions they catalyse.
 
 # %%
 for factor in factorisation.factors_.columns:
@@ -719,9 +889,10 @@ for layer, frame in factorisation.loadings_.items():
 print(f"factor tables and figures in {FACTOR_OUT}")
 
 # %% [markdown]
-# **Do the layers agree about each factor?** A joint factor fitted on stacked
-# layers can be carried by one layer alone. Projecting the animals onto a
-# factor within each layer and correlating those projections says which.
+# **Do the layers agree about each factor?** A factor fitted on all layers at
+# once can still be carried by one layer alone. Projecting the animals onto a
+# factor using each layer separately, and correlating those projections, says
+# which.
 
 # %%
 agreement = factor_cross_layer_agreement(factorisation)
@@ -729,10 +900,11 @@ agreement.pivot_table(index="factor", columns=["layer_a", "layer_b"],
                       values="correlation").round(2)
 
 # %% [markdown]
-# **Do a factor's layers land in the same place on the network?** Each layer's
-# strongest features are diffused separately; if the profiles overlap more than
-# random features of the same layers, the factor's transcripts, proteins and
-# metabolites are related by the biochemistry, not only by co-variation.
+# **Do a factor's layers land in the same place on the network?** The
+# strongest molecules of each layer are spread over the network separately. If
+# the resulting profiles overlap more than those of random molecules from the
+# same layers, the factor's transcripts, proteins and metabolites are related
+# biochemically, not only statistically.
 
 # %%
 propagation = factor_network_propagation(graphs[TISSUE_FOCUS], factorisation.loadings_,
@@ -740,12 +912,12 @@ propagation = factor_network_propagation(graphs[TISSUE_FOCUS], factorisation.loa
 propagation["table"].round(3)
 
 # %% [markdown]
-# **Which factors to trust.** Every reading in one table: the design term a
-# factor follows, whether the layers agree about it and whether that agreement
-# comes from the design (*between-group*) or from animal-to-animal variation
-# (*within-group* -- real here, because the animals are confirmed paired),
-# whether its features are directly linked, and whether its layers converge on
-# the network.
+# **Which factors to trust.** All readings in one table: the part of the
+# design a factor follows; whether the layers agree about it, and whether that
+# agreement comes from the design (*between-group*) or from differences between
+# animals (*within-group*, which is real here because the pairing is
+# confirmed); whether its molecules are directly linked; and whether its layers
+# converge on the network.
 
 # %%
 robustness = pairing_robustness(factorisation, groups, n_shuffles=200)
@@ -770,30 +942,29 @@ print(f"{leading}: where its transcripts, proteins and metabolites meet")
 propagation["top_nodes"][leading].head(12)[["name", "layer", "enrichment"]]
 
 # %%
-from transnet.visualization import plot_factor_network
-
 plot_factor_network(graphs[TISSUE_FOCUS], factorisation.loadings_, leading,
                     id_maps=id_map, top_n=12)
 plt.show()
 
 # %% [markdown]
-# ## Figures
+# ## Figures and exports
+#
+# Every figure is saved, and the responsive network of gastrocnemius muscle is
+# exported in every format TransNet writes (see the *saving, exporting and
+# sharing* walkthrough).
 
 # %%
+from transnet.io import to_arena3d, to_cytoscape_json, to_transomics2cytoscape, write_network
 from transnet.visualization import (
-    plot_axis_composition,
     plot_expression_concordance,
-    plot_factor_overview,
     plot_similarity_heatmap,
     plot_transomic_network,
+    plot_transomic_network_interactive,
     plot_values_heatmap,
+    transomic_backbone,
 )
 
 FOCUS = TISSUE_FOCUS
-composition = axes.reset_index().rename(columns={
-    "tissue": "contrast", "enzyme only": "enzyme_axis_only",
-    "metabolite only": "metabolite_axis_only", "both": "both_axes",
-})
 
 changes = pd.DataFrame({
     tissue: {n: d.get("log2fc") for n, d in graph.nodes(data=True)
@@ -805,7 +976,19 @@ figures = {
     f"network_{FOCUS}": plot_transomic_network(
         responsive_subnetwork(graphs[FOCUS]),
         title=f"{FOCUS}: most-regulated reactions after {TIMEPOINT} of training"),
-    "axes_by_tissue": plot_axis_composition(composition, label="contrast"),
+    "axes_by_tissue": composition_figure,
+    "layer_connectivity": layer_figure,
+    f"regulation_axes_{FOCUS}": axes_figure,
+    f"controversial_{FOCUS}": controversial_figure,
+    f"metabolite_regulators_{FOCUS}": regulator_figure,
+    f"tf_activity_{FOCUS}": tf_figure,
+    f"downstream_influence_{FOCUS}": influence_figure,
+    f"transomic_hubs_{FOCUS}": hub_figure,
+    "closest_tissues": comparison_figure,
+    f"temporal_structure_{FOCUS}": timing_figure,
+    f"regulatory_motifs_{FOCUS}": motif_figure,
+    f"convergence_null_{FOCUS}": convergence_figure,
+    f"structural_vulnerability_{FOCUS}": vulnerability_figure,
     f"concordance_{FOCUS}": plot_expression_concordance(concordance[FOCUS]),
     "modification_sites": modification_figure,
     "phospho_axis": phospho_axis_figure,
@@ -820,4 +1003,18 @@ figures = {
 for name, figure in figures.items():
     figure.savefig(OUT / f"{name}.png", dpi=150, bbox_inches="tight")
 plt.show()
+
+responsive = responsive_subnetwork(graphs[FOCUS])
+exports = OUT / "exports"
+exports.mkdir(exist_ok=True)
+write_network(responsive, str(exports / "csv"))
+to_cytoscape_json(responsive, exports / "network_cytoscape.json")
+to_arena3d(responsive, exports / "network_arena3d.json")
+to_transomics2cytoscape(responsive, zip_path=exports / "network_transomics2cytoscape.zip")
+# a browser draws a few hundred nodes well; export the backbone the figures use
+html_network = transomic_backbone(graphs[FOCUS], max_reactions=40)
+plot_transomic_network_interactive(html_network, layout="layered",
+                                   title=f"{FOCUS}, {TIMEPOINT}").write_html(
+    exports / "network.html")
 print(f"figures in {OUT}")
+print("exports:", ", ".join(sorted(p.name for p in exports.iterdir())))

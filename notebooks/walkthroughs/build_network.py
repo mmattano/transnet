@@ -220,6 +220,45 @@ pd.DataFrame([{"source": u, "target": v, "edge_type": d["edge_type"]}
               for u, v, d in built.edges(data=True)])
 
 # %% [markdown]
+# `generate_graph` assembles the graph from one edge table.
+# `generate_interaction_df` returns that table, one row per edge, and
+# `layer_map` the layer objects it was built from. Each edge type has its own
+# method that contributes rows (`enzyme_reaction_interaction` for catalysis,
+# `reaction_metabolite_interaction` for substrates and products, and so on);
+# `generate_interaction_df` calls all of them.
+
+# %%
+print(list(network.layer_map()))
+network.generate_interaction_df()[["source", "target", "source_layer", "target_layer",
+                                   "edge_type", "sign", "evidence"]]
+
+# %%
+pd.DataFrame(network.reaction_metabolite_interaction())[["source", "target", "edge_type", "sign"]]
+
+# %% [markdown]
+# A builder network can also be queried directly, without going through the
+# graph. `get_neighbors` lists what a node connects to, optionally restricted to
+# a layer or a direction. `find_paths` lists every route between two molecules,
+# and `get_path_annotations` returns the evidence for each step of a route.
+# `query_cross_layer_relationships` does this for whole sets of changed
+# molecules at once, and returns one row per connecting path.
+
+# %%
+print("hexokinase connects to:", network.get_neighbors("R00299"))
+print("and produces:", network.get_neighbors("R00299", layer="Metabolome",
+                                             direction="outgoing"))
+
+route = network.find_paths("P52789", "C00092", max_length=3)[0]
+print(" -> ".join(route))
+pd.DataFrame(network.get_path_annotations(route))[["source", "target", "edge_type",
+                                                   "source_db", "evidence"]]
+
+# %%
+network.query_cross_layer_relationships(
+    {"Proteome": ["P52789"], "Metabolome": ["C00092"]}
+)[["source", "target", "path", "edge_types"]]
+
+# %% [markdown]
 # The Signaling layer is the one layer the bundled network leaves out by default,
 # because most studies do not measure a phosphoproteome. Asking for it adds the
 # insulin cascade as `SignalingProtein` nodes, and every analysis then starts one
@@ -242,12 +281,40 @@ print(kinase)
 # %% [markdown]
 # ## Identifier maps
 #
-# Metabolomics reports PubChem or plain names while the network holds KEGG
-# compound identifiers, so a table keyed the other way matches nothing.
-# `build_alias_id_map` reads the translation out of the layer itself, with no
-# database call, and the result goes straight to `map_omics_to_network`.
+# Metabolomics tables often use PubChem ids or plain names, while the network
+# uses KEGG compound ids, so such a table would match nothing.
+# `build_alias_id_map` reads the translation from the layer itself, with no
+# database call. The *mapping data onto the network* walkthrough shows how the
+# result is passed to `map_omics_to_network`.
 
 # %%
 from transnet import build_alias_id_map
 
 print(build_alias_id_map(network, "Metabolome", "pubchem_id"))
+
+# %% [markdown]
+# ## Organisms
+#
+# The organism-wide networks are built by `maintenance/build_networks.py` from a
+# registry of organisms. Each entry names the organism's identifiers in KEGG,
+# NCBI, Ensembl and ChIP-Atlas. `available_organisms` lists the registry and
+# `organism_config` shows one entry.
+
+# %%
+from transnet.organisms import available_organisms, organism_config, register_organism
+
+print(available_organisms())
+organism_config("mouse")
+
+# %% [markdown]
+# `register_organism` adds an organism that is not in the registry, after which
+# `build_networks.py --organisms <name>` can build it. All six identifiers are
+# required. The *organism networks* page of the documentation describes how to
+# find them.
+
+# %%
+register_organism(
+    "zebrafish", kegg_org="dre", organism_full="Danio rerio", ncbi_org="7955",
+    ensembl_org="danio_rerio", ensembl_release=109, genome_chip="danRer11",
+)
+print(available_organisms())

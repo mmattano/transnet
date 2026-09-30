@@ -1,8 +1,9 @@
 # %% [markdown]
 # # Hubs across layers, and timing
 #
-# Two readings that need the whole hierarchy: which molecules *join* the
-# layers, and whether the wiring explains the order in which things respond.
+# Two questions that need the whole network: which molecules *connect* the
+# layers, and whether the network's structure explains the order in which
+# molecules respond over time.
 
 # %%
 import pandas as pd
@@ -27,9 +28,12 @@ map_omics_to_network(
 # %% [markdown]
 # ## A hub within a layer is not a trans-omic hub
 #
-# Degree centrality finds whatever is best annotated: a spliceosome protein,
-# a ribosomal subunit. Cross-layer degree finds the molecules through which
-# one layer's response reaches another.
+# Ranking molecules by their number of connections finds whatever is best
+# annotated, such as spliceosome or ribosomal proteins with hundreds of
+# interaction partners. `transomic_hubs` instead counts connections to *other
+# layers* (`cross_layer_degree`) and how many layers a molecule touches. These
+# are the molecules through which one layer's response reaches another.
+# `versatility` combines both into one score.
 
 # %%
 hubs = transomic_hubs(graph, top_percent=10)
@@ -49,10 +53,10 @@ pd.DataFrame({
 # %% [markdown]
 # ## Response times on the network
 #
-# A time course gives each molecule a half-response time,
-# which is the time it takes for the molecule to reach half of its maximum response.
-# As is presented in Morita et al. (2025). The question is
-# whether the best-connected molecules respond *fastest*.
+# A time course gives each molecule a half-response time (`t_half`): the time
+# it takes to reach half of its largest change. `assign_temporal_parameters`
+# computes it for every measured molecule and stores it on the node. The
+# question is then whether the best-connected molecules respond fastest.
 
 # %%
 TIMEPOINTS = [0, 5, 15, 30, 60]          # minutes after the glucose bolus
@@ -72,15 +76,26 @@ print(timing["interpretation"])
 structure["per_layer_thalf"]
 
 # %% [markdown]
-# The interpretation states a direction only when the correlation is
-# significant. On this small example it is not, and the notebook says so.
-# a reported trend that a test does not support is the failure mode this
-# wording exists to prevent.
+# `temporal_network_structure` correlates each molecule's number of
+# connections with its half-response time, and compares the layers. The
+# `interpretation` text states a direction only when the correlation is
+# statistically significant. On this small example it is not, so no trend is
+# claimed.
+#
+# `split_by_response_class` divides the molecules into fast and slow
+# responders (and, when dose data are present, sensitive and insensitive ones),
+# split at the median by default. It returns the subnetwork of each class, so
+# the groups can be analysed separately.
 
 # %%
 split = split_by_response_class(graph)
 pd.DataFrame([{"class": name, "molecules": sub.number_of_nodes()}
               for name, sub in split["subnetworks"].items()])
+
+# %% [markdown]
+# `plot_transomic_hubs` ranks the hubs by cross-layer connections, coloured by
+# layer. `plot_temporal_structure` plots half-response time against the number
+# of connections for each layer, with the result of the correlation test.
 
 # %%
 import matplotlib.pyplot as plt
@@ -88,5 +103,8 @@ import matplotlib.pyplot as plt
 from transnet.visualization import plot_temporal_structure, plot_transomic_hubs
 
 plot_transomic_hubs(hubs)
+plt.show()
+
+# %%
 plot_temporal_structure(graph, structure, time_unit="min")
 plt.show()

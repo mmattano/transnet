@@ -66,7 +66,7 @@ exclude_patterns = [
     # The studies need built networks and minutes of compute; their narrative
     # lives in the .rst pages beside them, with figures from a real run.
     "notebooks/studies/*", "notebooks/extra/*", "notebooks/README.md",
-    "notebooks/exports/*",
+    "notebooks/exports/*", "notebooks/walkthroughs/exports/*",
 ]
 
 # Sphinx should not import heavy optional database clients just to read a

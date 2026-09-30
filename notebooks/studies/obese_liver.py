@@ -1,41 +1,48 @@
 # %% [markdown]
-# # Reproducing a published trans-omic study
+# # Obese liver after a glucose load: a 19-gene metabolic panel
 #
-# A method earns its place only if it answers questions a per-layer analysis
-# cannot, *and gets the answers right*. This notebook tests both against
-# [Uematsu *et al.*, *iScience* 25(2):103787, 2022](https://doi.org/10.1016/j.isci.2022.103787):
-# liver transcriptome, proteome and metabolome in the same animals, wild-type
-# and leptin-deficient obese (ob/ob), fasted and 4 h after oral glucose.
+# **Question.** Does a trans-omic analysis answer questions that a separate
+# analysis of each layer cannot, and are its answers right? The data here
+# come with published conclusions, so both can be checked.
 #
-# The data is the Kuroda laboratory's shared liver cohort, released with their
-# OMELET code under GPL-3.0, which is also why the claims of Kokaji *et al.*
-# (*Sci. Signal.* 13:eaaz1236, 2020) can be scored on it. TransNet is
-# MIT-licensed, so the files are downloaded at run time and never committed.
+# **Data.** [Uematsu *et al.*, *iScience* 25(2):103787, 2022](https://doi.org/10.1016/j.isci.2022.103787)
+# measured the liver transcriptome, proteome and metabolome in the same mice:
+# wild-type and leptin-deficient obese (ob/ob) animals, fasted and 4 hours
+# after an oral glucose load. The panel covers central carbon metabolism: 19
+# enzyme genes, their proteins, and 32 metabolites.
+#
+# The data belong to the Kuroda laboratory's shared liver cohort, released with
+# their OMELET code under GPL-3.0. That is also why claims from Kokaji *et al.*
+# (*Sci. Signal.* 13:eaaz1236, 2020) can be checked on them. TransNet is
+# MIT-licensed, so the files are downloaded when the notebook runs and are never
+# committed to this repository.
 
 # %%
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from transnet import (
+    convergence_significance,
     cross_layer_connectivity,
     downstream_influence,
     expression_concordance,
     layer_coverage,
-    regulation_axis_summary,
-    transcription_factor_activity,
-    transomic_hubs,
     map_omics_to_network,
     metabolite_regulatory_roles,
+    path_consistency_summary,
     reaction_regulation_table,
+    regulation_axis_summary,
+    regulatory_motifs,
     regulatory_role_enrichment,
     responsive_subnetwork,
-    path_consistency_summary,
+    structural_vulnerability,
     trace_regulatory_paths,
+    transcription_factor_activity,
+    transomic_hubs,
 )
-from transnet.analysis import path_verdicts, versus_chance
+from transnet.analysis import versus_chance
+from transnet.api import kegg_reaction_pathways
 from transnet.datasets import (
     DATA_DIR,
     UEMATSU_CONTRASTS,
@@ -46,20 +53,50 @@ from transnet.datasets import (
     uematsu_contrast,
     uematsu_panel_network,
 )
+from transnet.io import to_arena3d, to_cytoscape_json, to_transomics2cytoscape, write_network
+from transnet.visualization import (
+    plot_axis_composition,
+    plot_controversial_reactions,
+    plot_convergence_null,
+    plot_downstream_influence,
+    plot_expression_concordance,
+    plot_layer_connectivity,
+    plot_metabolite_regulators,
+    plot_regulation_axes,
+    plot_regulatory_motifs,
+    plot_regulatory_paths,
+    plot_structural_vulnerability,
+    plot_transomic_hubs,
+    plot_transomic_network,
+    plot_transomic_network_interactive,
+)
 
 OUT = DATA_DIR / "published_results" / "obese_liver"
 OUT.mkdir(parents=True, exist_ok=True)
 QVALUE = 0.1                      # the threshold the Kuroda laboratory uses
+
+
+def save(figure, name):
+    figure.savefig(OUT / f"{name}.png", dpi=150, bbox_inches="tight")
+    plt.show()
+
 
 fetch_uematsu_panel()
 graph, id_map = uematsu_panel_network()
 print(f"panel neighbourhood: {graph.number_of_nodes()} molecules, "
       f"{graph.number_of_edges()} relationships")
 
+# %% [markdown]
+# The network is the part of the organism-wide mouse network around the panel:
+# its genes, their proteins, the reactions those enzymes catalyse, and every
+# metabolite on or regulating those reactions. With no protein interactions
+# among 19 enzymes, every edge connects two different layers.
+
 # %%
 connectivity = cross_layer_connectivity(graph)
 print(f"{connectivity['cross_layer_fraction']:.0%} of the panel's edges cross layers")
-connectivity["matrix"]
+save(plot_layer_connectivity(connectivity, title="Obese liver panel: edges between layers"),
+     "layer_connectivity")
 
 # %%
 panels = {layer: load_uematsu_panel(layer) for layer in
@@ -70,9 +107,9 @@ pd.DataFrame({layer: {"features": values.shape[0], "samples": values.shape[1]}
 # %% [markdown]
 # ## What a per-layer analysis can say
 #
-# Three lists of changed molecules, and the overlap between two of them.
-# Molecules are called changed at 1.5-fold and q <= 0.1, the definition the
-# authors use.
+# Three lists of changed molecules, and the overlap between two of them. A
+# molecule counts as changed at 1.5-fold and q <= 0.1, the definition the
+# authors use. The main contrast is obese against lean liver, fasted.
 
 # %%
 LABEL, REFERENCE, TEST = UEMATSU_CONTRASTS[2]     # ob/ob vs WT, fasting
@@ -90,12 +127,12 @@ shared = set(changed["Transcriptome"]["feature"]) & set(changed["Proteome"]["fea
 print(f"  shared between transcript and protein lists: {len(shared)}")
 
 # %% [markdown]
-# That is the whole of it. Which reactions are affected, through which
-# mechanism, and whether the layers agree are not answerable from those lists
-# They are what the published paper asks.
-
-# %% [markdown]
-# ## Onto the network
+# That is all the separate lists can say. They cannot say which reactions are
+# affected, through which mechanism, or whether the layers agree. Those are the
+# questions the published paper asks, and the rest of this notebook answers them
+# on the network.
+#
+# ## Mapping the data onto the network
 
 # %%
 extra = {name: ids for name, ids in UEMATSU_METABOLITE_IDS.items() if len(ids) > 1}
@@ -105,9 +142,9 @@ report = map_omics_to_network(
     se_column="se", id_map=id_map, qvalue_threshold=QVALUE,
     log2fc_threshold=UEMATSU_LOG2FC,
 )
-# A mass spectrometer measures a sugar phosphate as one pool while KEGG names
-# its anomers separately, so one measurement is attached to every form a
-# reaction uses.
+# Mass spectrometry measures a sugar phosphate as one pool, while KEGG lists its
+# anomers separately, so the measurement is attached to every form a reaction
+# uses.
 for name, ids in extra.items():
     row = tables["Metabolome"][tables["Metabolome"]["feature"] == name]
     if row.empty:
@@ -124,7 +161,20 @@ for name, ids in extra.items():
 report.per_layer
 
 # %% [markdown]
-# ## What the network says
+# `layer_coverage` shows the limit of this panel: nearly every transcript and
+# protein is measured, but only a quarter of the metabolites that the panel's
+# reactions touch.
+
+# %%
+layer_coverage(graph)
+
+# %% [markdown]
+# ## Which axis regulates each reaction
+#
+# For every reaction, `reaction_regulation_table` asks whether it changed
+# through the amount of its enzyme (the enzyme or gene axis), through its
+# substrates, products and allosteric regulators (the metabolite axis), or both,
+# and whether the two axes agree.
 
 # %%
 regulation = reaction_regulation_table(graph)
@@ -132,53 +182,155 @@ regulated = regulation[(regulation["gene_axis"] != 0) | (regulation["metabolite_
 enzyme_only = regulated[(regulated["gene_axis"] != 0) & (regulated["metabolite_axis"] == 0)]
 metabolite_only = regulated[(regulated["gene_axis"] == 0) & (regulated["metabolite_axis"] != 0)]
 both = regulated[(regulated["gene_axis"] != 0) & (regulated["metabolite_axis"] != 0)]
+controversial = regulated[regulated["controversial"]]
 
 print(f"{len(regulated)} of {len(regulation)} reactions regulated: {len(enzyme_only)} through "
-      f"enzyme amount only, {len(metabolite_only)} through metabolites only, {len(both)} through both")
-print(f"{int(regulated['controversial'].sum())} controversial")
+      f"enzyme amount only, {len(metabolite_only)} through metabolites only, "
+      f"{len(both)} through both")
+print(f"{len(controversial)} controversial (the two axes point opposite ways)")
+regulation.to_csv(OUT / "reaction_regulation.csv", index=False)
 regulated.head(8)[["reaction", "name", "gene_axis", "metabolite_axis", "gene_axis_evidence"]]
 
+# %% [markdown]
+# `gene_axis_evidence` shows what each enzyme-axis call rests on. With both
+# transcript and protein measured for almost every enzyme, most calls are
+# supported by both layers (`gene_protein`).
+
 # %%
-layer_coverage(graph)
+regulated["gene_axis_evidence"].value_counts(dropna=False).to_frame("reactions")
 
 # %% [markdown]
-# ## Per-pathway balance
+# ### The controversial reactions
+#
+# Each bar is one measured molecule's push on the reaction: to the right it
+# speeds the reaction up, to the left it slows it down. Yellow bars are the
+# enzyme axis, pink bars the metabolite axis.
 
 # %%
-regulation_axis_summary(regulation)
+controversial[["reaction", "name", "gene_axis", "metabolite_axis", "allosteric_regulators"]]
+
+# %%
+save(plot_controversial_reactions(graph, regulation), "controversial_reactions")
 
 # %% [markdown]
-# ## Which factors drive the responsive genes, and which molecules join layers
+# ### Per-pathway balance
+#
+# `kegg_reaction_pathways` assigns each reaction to its KEGG pathways (mouse
+# pathways only, overview maps excluded). `regulation_axis_summary` then counts,
+# per pathway, how many reactions each axis activates or inhibits, and
+# `plot_regulation_axes` draws it. Reactions that KEGG places in no mouse
+# pathway are counted as `unassigned` and left out of the figure.
+
+# %%
+pathways = kegg_reaction_pathways(regulation["reaction"], organism="mmu")
+pathway_balance = regulation_axis_summary(regulation, pathway_map=pathways)
+pathway_balance.head(10)[["pathway", "n_reactions", "gene_activated", "gene_inhibited",
+                          "metabolite_activated", "metabolite_inhibited", "n_controversial"]]
+
+# %%
+assigned = pathway_balance[(pathway_balance["pathway"] != "unassigned")
+                           & (pathway_balance["n_reactions"] >= 2)]
+save(plot_regulation_axes(assigned,
+                          title="Obese against lean liver, fasted: regulation by pathway"),
+     "regulation_axes")
+
+# %% [markdown]
+# ### Do the changed metabolites regulate enzymes?
+#
+# A changed metabolite may simply follow the change in flux, or it may itself
+# act on an enzyme. `metabolite_regulatory_roles` lists, for each metabolite,
+# the reactions it activates or inhibits according to BRENDA, and
+# `regulatory_role_enrichment` tests whether changed metabolites are
+# regulators more often than measured metabolites in general.
+
+# %%
+roles = regulatory_role_enrichment(metabolite_regulatory_roles(graph))
+counts = roles["counts"]
+print(f"{counts['n_differential_regulators']} of {counts['n_differential']} changed metabolites "
+      f"regulate an enzyme ({counts['fraction_differential_regulators']:.0%}, against "
+      f"{counts['fraction_background_regulators']:.0%} of all measured metabolites)")
+roles["regulators"][["name", "log2fc", "reactions_activated", "reactions_inhibited"]]
+
+# %%
+save(plot_metabolite_regulators(roles), "metabolite_regulators")
+
+# %% [markdown]
+# ### Are the protein changes transcriptional?
+#
+# The paper's central claim is that obese liver is rewired through the amount
+# of enzyme, and specifically through more *transcript*. For every gene
+# measured in both layers, `expression_concordance` asks whether the protein
+# followed its transcript. Because standard errors were mapped, it also tests
+# directly whether the protein changed *more* than its transcript, which does
+# not depend on where a significance cut-off falls.
+
+# %%
+concordance = expression_concordance(graph)
+concordance_counts = concordance["counts"]
+print(f"{concordance_counts['concordant']} concordant, "
+      f"{concordance_counts['protein_only']} protein-only, "
+      f"{concordance_counts['discordant']} against their transcript")
+print(f"{concordance_counts.get('protein_beyond_transcript')} proteins moved significantly "
+      f"further than their transcript, of {concordance_counts.get('tested_difference')} testable")
+
+table = concordance["table"]
+table[table.get("protein_beyond_transcript", False) == True][  # noqa: E712
+    [c for c in ("name", "gene_log2fc", "protein_log2fc", "difference", "difference_q")
+     if c in table.columns]
+]
+
+# %%
+save(plot_expression_concordance(concordance), "concordance")
+
+# %% [markdown]
+# ## Transcription factors, and the molecules that connect layers
+#
+# The panel network has no transcription-factor edges that reach its 19
+# genes, so the factor inference cannot run here; this is a limit of the panel,
+# not a finding. The liver time-course study runs it genome-wide. The
+# cross-layer hubs are informative: they are the molecules through which the
+# response in one layer reaches another.
 
 # %%
 factors = transcription_factor_activity(graph, min_targets=3)
 implicated = factors[factors["q_value"] <= 0.05] if not factors.empty else factors
-print(f"{len(implicated)} of {len(factors)} transcription factors implicated "
-      f"-- a 19-gene panel carries few targets, so this is a coverage limit")
+print(f"{len(factors)} transcription factors testable, {len(implicated)} implicated")
 
 hubs = transomic_hubs(responsive_subnetwork(graph), top_percent=10)
 hubs.head(8)[["name", "layer", "cross_layer_degree", "n_layers_touched"]]
 
+# %%
+save(plot_transomic_hubs(hubs, title="Obese liver: molecules connecting layers"),
+     "transomic_hubs")
+
 # %% [markdown]
-# ## Does the upper hierarchy predict the metabolites?
+# ## Do the enzyme changes predict the metabolite changes?
+#
+# If the network is right, the changes in transcripts and proteins should
+# predict which way the metabolites moved. Two methods ask this (see the
+# *signed regulatory paths* walkthrough). Propagation pushes the enzyme changes
+# forward along signed edges and gives each metabolite a predicted direction.
 
 # %%
 seeds = {n: float(d["log2fc"]) for n, d in graph.nodes(data=True)
          if d.get("layer") in ("Transcriptome", "Proteome")
          and d.get("regulated") and d.get("log2fc") is not None}
 influence = downstream_influence(graph, seeds, target_layer="Metabolome")
-measured = influence[influence["observed"].fillna(0) != 0] if "observed" in influence else influence
-if not measured.empty and "agrees" in measured:
+measured = influence[influence["observed"].fillna(0) != 0]
+if not measured.empty:
     agree = int(measured["agrees"].astype("boolean").fillna(False).sum())
     print(f"{agree} of {len(measured)} changed metabolites predicted correctly: "
           f"{versus_chance(agree, len(measured))}")
-measured.head(10)
+measured.head(10)[["name", "score", "predicted_direction", "observed", "agrees"]]
+
+# %%
+save(plot_downstream_influence(influence), "downstream_influence")
 
 # %% [markdown]
-# Path tracing asks the same question the other way round: rather than
-# propagating outwards, it walks signed routes from each changed gene or
-# protein to each changed metabolite and asks whether the sign along the route
-# matches the direction observed.
+# Path tracing lists the individual routes from each changed gene or protein to
+# each changed metabolite, and checks whether the sign along each route matches
+# the measured direction. `path_consistency_summary` gives one verdict per
+# metabolite.
 
 # %%
 paths = trace_regulatory_paths(graph, target_layer="Metabolome", max_length=4)
@@ -193,19 +345,52 @@ else:
 summary.head(10)
 
 # %%
-from transnet.visualization import plot_regulatory_paths
-
-paths_figure = plot_regulatory_paths(paths, graph, top_n=8)
-plt.show()
+save(plot_regulatory_paths(paths, graph, top_n=8), "regulatory_paths")
 
 # %% [markdown]
-# ## Are the layers sample-paired?
+# ## Recurring wiring patterns, weak points, and a null model
 #
-# A joint factor model needs each column to be the same animal in every file.
-# The design rows line up and the authors describe the layers as measured in
-# the same individuals, but that is a claim the data can check: within a group,
-# transcript and protein should agree better as listed than under a shuffled
-# pairing.
+# `regulatory_motifs` searches the signed wiring among the changed molecules
+# for product inhibition, allosteric feedback and feed-forward patterns, which
+# can explain a controversial reaction rather than just flag it. On this panel
+# it finds none: the one allosteric regulator that changed, alanine, acts on
+# pyruvate kinase, which does not produce it.
+
+# %%
+motifs = regulatory_motifs(graph)
+print(motifs["counts"])
+save(plot_regulatory_motifs(motifs), "regulatory_motifs")
+motifs["motifs"][["motif", "reaction_name", "metabolite_name", "enzyme", "sign_product"]].head(10)
+
+# %% [markdown]
+# Is the number of reactions where both axes changed more than chance would
+# produce? `convergence_significance` reassigns at random which molecules
+# changed, keeping the number per layer fixed, and counts again.
+
+# %%
+convergence = convergence_significance(graph, n_randomisations=500)
+print(f"{convergence['observed']} reactions with both axes changed; "
+      f"{convergence['null_mean']:.1f} expected by chance "
+      f"(z = {convergence['z']:+.1f}, p = {convergence['p_value']:.3g})")
+save(plot_convergence_null(convergence), "convergence_null")
+
+# %% [markdown]
+# `structural_vulnerability` lists the molecules whose removal would split the
+# responsive network into separate pieces.
+
+# %%
+vulnerability = structural_vulnerability(responsive_subnetwork(graph), top_n=8)
+save(plot_structural_vulnerability(vulnerability), "structural_vulnerability")
+vulnerability
+
+# %% [markdown]
+# ## Are the layers from the same animals?
+#
+# A joint factor model assumes that column *i* is the same mouse in every file.
+# The authors describe the layers as measured in the same individuals, and the
+# data can check this: within a group, a mouse whose transcript of a gene is
+# high should also tend to have more of that protein, and this agreement
+# should be stronger in the listed pairing than in shuffled ones.
 
 # %%
 from transnet.analysis.factors import (
@@ -230,17 +415,18 @@ print(f"agreement as listed {pairing['observed']:.3f}, under shuffled pairings "
       f"{'paired' if pairing['paired'] else 'pairing not confirmed'}")
 
 # %% [markdown]
-# With 17 genes in both layers the check has little power: the agreement leans
-# the right way but does not reach significance, so the pairing is neither
-# confirmed nor refuted. The factor model is fitted and then *tested for whether
-# that matters*: a factor carried by genotype or glucose -- whose labels are
-# certain -- keeps its cross-layer agreement however the mice within a group
-# are paired, and is interpretable either way. One living in mouse-to-mouse
-# variation is not read further until the pairing is confirmed.
+# With only 17 genes in both layers the check has little power: the agreement
+# points the right way but is not significant, so the pairing is neither
+# confirmed nor refuted.
+#
+# The factor model is therefore fitted and then tested for whether the pairing
+# matters. `pairing_robustness` shuffles the mice within each group and checks
+# whether each factor keeps its agreement across layers. A factor marked
+# `between-group` is carried by genotype or glucose, whose labels are certain,
+# and can be interpreted whatever the pairing. A factor that depends on
+# mouse-to-mouse variation is not interpreted until the pairing is confirmed.
 
 # %%
-import numpy as np
-
 matrices = {}
 for layer, (values, _) in panels.items():
     frame = values.T.apply(pd.to_numeric, errors="coerce")
@@ -268,9 +454,11 @@ propagation = factor_network_propagation(graph, factorisation.loadings_, id_maps
  .round(3))
 
 # %% [markdown]
-# Only a factor marked ``between-group`` is read further here: its layers agree
-# whatever the pairing, so it is carried by genotype or glucose rather than by
-# how the columns of three files happen to line up.
+# In the table, the genotype and minutes columns give the share of each factor's
+# variation explained by that part of the design. `direct links vs chance` says
+# how much more often the factor's top molecules are directly connected on the
+# network than random molecules, and `overlap` how much the network
+# neighbourhoods of its top molecules in different layers overlap.
 
 # %%
 from transnet.visualization import plot_factor_network, plot_factor_scores
@@ -301,61 +489,18 @@ for factor in robust_factors:
           .round(1).to_string(index=False))
 
 # %% [markdown]
-# ## Are the protein changes transcriptional?
+# ## The published claims, checked
 #
-# The paper's central claim is that obese liver is rewired through enzyme
-# amount, and specifically through increased *transcripts*. The threshold-free
-# test, protein change minus transcript change with standard errors, is
-# what decides that without depending on where the cutoff sits.
-
-# %%
-concordance = expression_concordance(graph)
-counts = concordance["counts"]
-print(f"{counts['concordant']} concordant, {counts['protein_only']} protein-only, "
-      f"{counts['discordant']} against their transcript")
-print(f"{counts.get('protein_beyond_transcript')} proteins moved significantly further than "
-      f"their transcript, of {counts.get('tested_difference')} testable")
-
-table = concordance["table"]
-table[table.get("protein_beyond_transcript", False) == True][
-    [c for c in ("name", "gene_log2fc", "protein_log2fc", "difference", "difference_q")
-     if c in table.columns]
-]
-
-# %% [markdown]
-# ## The wiring behind the controversial calls
-#
-# The panel is central carbon metabolism, where product inhibition is the
-# textbook mechanism. Finding it from the wiring rather than assuming it is
-# what lets a controversial reaction be explained instead of just flagged.
-
-# %%
-from transnet import convergence_significance, regulatory_motifs, structural_vulnerability
-
-motifs = regulatory_motifs(graph)
-print(motifs["counts"])
-motifs["motifs"][["motif", "reaction_name", "metabolite_name", "enzyme", "sign_product"]].head(10)
-
-# %%
-convergence = convergence_significance(graph, n_randomisations=500)
-print(f"{convergence['observed']} reactions carry both axes; the shuffled null gives "
-      f"{convergence['null_mean']:.1f} (z = {convergence['z']:+.1f}, "
-      f"p = {convergence['p_value']:.3g})")
-
-structural_vulnerability(responsive_subnetwork(graph), top_n=8)
-
-# %% [markdown]
-# ## The published claims, scored
-#
-# Each claim is given the number from this analysis that bears on it, and a
-# verdict. Two of them come from genome-wide, multi-timepoint studies: a
-# 19-gene panel at one timepoint is the wrong instrument, and the verdict says
-# "not reproduced here", not "wrong".
+# Each claim is set beside the number from this analysis that bears on it, and
+# given a verdict. Some claims come from genome-wide studies with several time
+# points; a 19-gene panel at one time point cannot test them, and the verdict
+# then says "not testable on this panel" rather than "wrong". The genome-wide
+# data are analysed in the liver time-course study.
 
 # %%
 enzyme_share = len(enzyme_only.index.union(both.index)) / max(len(regulated), 1)
 metabolite_share = len(metabolite_only.index.union(both.index)) / max(len(regulated), 1)
-transcript_supported = int((regulated["gene_axis_transcript_support"] == True).sum())
+transcript_supported = int((regulated["gene_axis_transcript_support"] == True).sum())  # noqa: E712
 enzyme_axis_total = len(enzyme_only) + len(both)
 
 claims = pd.DataFrame([
@@ -366,7 +511,7 @@ claims = pd.DataFrame([
      "verdict": "reproduced, weakly"},
     {"claim": "ob/ob glucose responses depend instead on slow gene expression (Kokaji 2020)",
      "evidence": "no enzyme-axis reaction either; one timepoint, 19 genes",
-     "verdict": "not reproduced here"},
+     "verdict": "not testable on this panel"},
     {"claim": "Fasting ob/ob liver is rewired through enzyme amount rather than metabolites (Uematsu 2022)",
      "evidence": f"{enzyme_share:.0%} of regulated reactions via enzymes, "
                  f"{metabolite_share:.0%} via metabolites",
@@ -374,8 +519,8 @@ claims = pd.DataFrame([
     {"claim": "... and specifically through increased transcripts (Uematsu 2022)",
      "evidence": f"{transcript_supported} of {enzyme_axis_total} enzyme-axis reactions have a "
                  f"transcript moving the same way; "
-                 f"{counts.get('protein_beyond_transcript')} proteins moved significantly "
-                 f"further than their transcript",
+                 f"{concordance_counts.get('protein_beyond_transcript')} proteins moved "
+                 f"significantly further than their transcript",
      "verdict": "not reproduced"},
     {"claim": "The pyruvate cycle is regulated through both transcripts and metabolites (Uematsu 2022)",
      "evidence": f"{len(both)} reactions carry both axes", "verdict": "reproduced"},
@@ -383,14 +528,15 @@ claims = pd.DataFrame([
      "evidence": f"{int(regulated['controversial'].sum())} of {len(regulated)} "
                  f"({regulated['controversial'].mean():.0%}); 19 central-carbon enzymes "
                  f"against 673 genome-wide reactions",
-     "verdict": "not reproduced here"},
+     "verdict": "not testable on this panel"},
     {"claim": "Increased gluconeogenic flux arises primarily from increased transcripts (Uematsu 2022)",
-     "evidence": "a claim about flux; flux modelling is out of scope", "verdict": "out of scope"},
+     "evidence": "a claim about flux, which TransNet does not model", "verdict": "out of scope"},
 ])
+claims.to_csv(OUT / "published_claims.csv", index=False)
 claims
 
 # %% [markdown]
-# ## Two findings no list of changed molecules contains
+# ## Two findings that no list of changed molecules contains
 
 # %%
 def describe(symbol_or_name):
@@ -408,18 +554,21 @@ pd.concat([describe(name) for name in ("Pklr", "L-Alanine", "Ldha", "Lactate")],
           ignore_index=True)
 
 # %% [markdown]
-# **Pyruvate kinase is pulled in both directions.** Obese liver has more of
-# it, and also more alanine, its classic allosteric inhibitor in liver. More
-# enzyme, more brake: the regulation that restrains futile pyruvate cycling
-# while the liver makes glucose. Alanine reaches the network only because
-# BRENDA writes it "L-Ala", which the name matching resolves.
+# **Pyruvate kinase is pushed in both directions.** Obese liver has more of the
+# enzyme, and also more alanine, its classic allosteric inhibitor in liver. The
+# extra enzyme is held back by the extra inhibitor. This is the regulation that
+# limits wasteful cycling between pyruvate and phosphoenolpyruvate while the
+# liver makes glucose. Alanine is found as a regulator only because the name
+# matching resolves BRENDA's spelling, "L-Ala".
 #
-# **Lactate dehydrogenase rises while its substrate falls**, consistent with
-# lactate being drawn into gluconeogenesis faster, a hypothesis a flux
-# measurement could test.
+# **Lactate dehydrogenase rises while its substrate falls.** This is consistent
+# with lactate being used faster for glucose production, a hypothesis that a
+# flux measurement could test.
 
 # %% [markdown]
 # ## The other two contrasts
+#
+# The same analysis for the glucose response of lean and of obese liver.
 
 # %%
 rows = []
@@ -444,24 +593,34 @@ composition = pd.DataFrame(rows)
 composition
 
 # %% [markdown]
-# Healthy liver answers glucose through metabolites; obese liver, fasted, is
-# rewired through enzyme amount. That shift is the paper's headline, and it is
-# reproduced here.
+# Healthy liver responds to glucose through its metabolites; fasted obese liver
+# is changed through the amount of its enzymes. This shift is the paper's main
+# finding, and it is reproduced here.
 
 # %%
-from transnet.visualization import (
-    plot_axis_composition,
-    plot_expression_concordance,
-    plot_transomic_network,
-)
+save(plot_axis_composition(composition), "axes_by_contrast")
 
-for figure, name in [
-    (plot_transomic_network(responsive_subnetwork(graph), title=LABEL), "network"),
-    (plot_axis_composition(composition), "axes_by_contrast"),
-    (plot_expression_concordance(concordance), "concordance"),
-    (paths_figure, "regulatory_paths"),
-]:
-    figure.savefig(OUT / f"{name}.png", dpi=150, bbox_inches="tight")
-claims.to_csv(OUT / "published_claims.csv", index=False)
-plt.show()
+# %% [markdown]
+# ## The responsive network
+
+# %%
+responsive = responsive_subnetwork(graph)
+save(plot_transomic_network(responsive, title=LABEL), "network")
+
+# %% [markdown]
+# ## Exports
+#
+# The responsive network in every format TransNet writes, for use in other
+# tools (see the *saving, exporting and sharing* walkthrough).
+
+# %%
+exports = OUT / "exports"
+exports.mkdir(exist_ok=True)
+write_network(responsive, str(exports / "csv"))
+to_cytoscape_json(responsive, exports / "network_cytoscape.json")
+to_arena3d(responsive, exports / "network_arena3d.json")
+to_transomics2cytoscape(responsive, zip_path=exports / "network_transomics2cytoscape.zip")
+plot_transomic_network_interactive(responsive, layout="layered", title=LABEL).write_html(
+    exports / "network.html")
 print(f"figures and tables in {OUT}")
+print("exports:", ", ".join(sorted(p.name for p in exports.iterdir())))
