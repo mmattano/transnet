@@ -165,7 +165,7 @@ def brown_adipocyte_contrast(frame: pd.DataFrame, control: str = "0h",
 
     The matrices are already log2, so a fold change is a difference of means.
     The standard error comes back too, because comparing a protein's change
-    with its transcript's (A10) needs both without a significance threshold.
+    with its transcript's needs both, without a significance threshold.
     """
     from transnet.analysis.data_integration import compute_differential_expression
 
