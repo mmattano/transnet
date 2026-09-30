@@ -1,0 +1,90 @@
+ID,Name,Type,Layer,FC,P_value,Reversible
+15275,Hk1,Gene,Transcriptome,,,
+15277,Hk2,Gene,Transcriptome,,,
+14751,Gpi1,Gene,Transcriptome,,,
+18641,Pfkl,Gene,Transcriptome,,,
+14121,Fbp1,Gene,Transcriptome,,,
+11674,Aldoa,Gene,Transcriptome,,,
+21991,Tpi1,Gene,Transcriptome,,,
+14433,Gapdh,Gene,Transcriptome,,,
+18655,Pgk1,Gene,Transcriptome,,,
+18648,Pgam1,Gene,Transcriptome,,,
+13806,Eno1,Gene,Transcriptome,,,
+18770,Pklr,Gene,Transcriptome,,,
+16828,Ldha,Gene,Transcriptome,,,
+18597,Pdha1,Gene,Transcriptome,,,
+14381,G6pdx,Gene,Transcriptome,,,
+18534,Pck1,Gene,Transcriptome,,,
+14377,G6pc,Gene,Transcriptome,,,
+20787,Srebf1,Gene,Transcriptome,,,
+56458,Foxo1,Gene,Transcriptome,,,
+15378,Hnf4a,Gene,Transcriptome,,,
+58805,Mlxipl,Gene,Transcriptome,,,
+P17710,Hk1,Protein,Proteome,,,
+O08528,Hk2,Protein,Proteome,,,
+P06745,Gpi1,Protein,Proteome,,,
+P12382,Pfkl,Protein,Proteome,,,
+Q9QXD6,Fbp1,Protein,Proteome,,,
+P05064,Aldoa,Protein,Proteome,,,
+P17751,Tpi1,Protein,Proteome,,,
+P16858,Gapdh,Protein,Proteome,,,
+P09411,Pgk1,Protein,Proteome,,,
+Q9DBJ1,Pgam1,Protein,Proteome,,,
+P17182,Eno1,Protein,Proteome,,,
+P53657,Pklr,Protein,Proteome,,,
+P06151,Ldha,Protein,Proteome,,,
+P35486,Pdha1,Protein,Proteome,,,
+Q00612,G6pdx,Protein,Proteome,,,
+Q9Z2V4,Pck1,Protein,Proteome,,,
+P35576,G6pc,Protein,Proteome,,,
+Q9WTN3,Srebf1,Protein,Proteome,,,
+Q9R1E0,Foxo1,Protein,Proteome,,,
+P49698,Hnf4a,Protein,Proteome,,,
+Q99MZ3,Mlxipl,Protein,Proteome,,,
+P15208,Insr,Protein,Proteome,,,
+P35569,Irs1,Protein,Proteome,,,
+P26450,Pik3r1,Protein,Proteome,,,
+P31750,Akt1,Protein,Proteome,,,
+C00031,D-Glucose,Metabolite,Metabolome,,,
+C00668,alpha-D-Glucose 6-phosphate,Metabolite,Metabolome,,,
+C00085,D-Fructose 6-phosphate,Metabolite,Metabolome,,,
+C00354,"D-Fructose 1,6-bisphosphate",Metabolite,Metabolome,,,
+C00665,"beta-D-Fructose 2,6-bisphosphate",Metabolite,Metabolome,,,
+C00111,Glycerone phosphate,Metabolite,Metabolome,,,
+C00118,D-Glyceraldehyde 3-phosphate,Metabolite,Metabolome,,,
+C00236,3-Phospho-D-glyceroyl phosphate,Metabolite,Metabolome,,,
+C00197,3-Phospho-D-glycerate,Metabolite,Metabolome,,,
+C00631,2-Phospho-D-glycerate,Metabolite,Metabolome,,,
+C00074,Phosphoenolpyruvate,Metabolite,Metabolome,,,
+C00022,Pyruvate,Metabolite,Metabolome,,,
+C00186,(S)-Lactate,Metabolite,Metabolome,,,
+C00024,Acetyl-CoA,Metabolite,Metabolome,,,
+C00158,Citrate,Metabolite,Metabolome,,,
+C00036,Oxaloacetate,Metabolite,Metabolome,,,
+C00041,L-Alanine,Metabolite,Metabolome,,,
+C00002,ATP,Metabolite,Metabolome,,,
+C00008,ADP,Metabolite,Metabolome,,,
+C00020,AMP,Metabolite,Metabolome,,,
+C00003,NAD+,Metabolite,Metabolome,,,
+C00004,NADH,Metabolite,Metabolome,,,
+C00006,NADP+,Metabolite,Metabolome,,,
+C00005,NADPH,Metabolite,Metabolome,,,
+C00009,Orthophosphate,Metabolite,Metabolome,,,
+C00001,H2O,Metabolite,Metabolome,,,
+C01236,"D-Glucono-1,5-lactone 6-phosphate",Metabolite,Metabolome,,,
+R00299,hexokinase,Reaction,Reactions,,,False
+R00771,glucose-6-phosphate isomerase,Reaction,Reactions,,,True
+R00756,6-phosphofructokinase,Reaction,Reactions,,,False
+R00762,"fructose-1,6-bisphosphatase",Reaction,Reactions,,,False
+R01070,fructose-bisphosphate aldolase,Reaction,Reactions,,,True
+R01015,triose-phosphate isomerase,Reaction,Reactions,,,True
+R01061,glyceraldehyde-3-phosphate dehydrogenase,Reaction,Reactions,,,True
+R01512,phosphoglycerate kinase,Reaction,Reactions,,,True
+R01518,phosphoglycerate mutase,Reaction,Reactions,,,True
+R00658,enolase,Reaction,Reactions,,,True
+R00200,pyruvate kinase,Reaction,Reactions,,,False
+R00703,L-lactate dehydrogenase,Reaction,Reactions,,,True
+R00209,pyruvate dehydrogenase,Reaction,Reactions,,,False
+R00835,glucose-6-phosphate dehydrogenase,Reaction,Reactions,,,False
+R00341,phosphoenolpyruvate carboxykinase,Reaction,Reactions,,,False
+R00303,glucose-6-phosphatase,Reaction,Reactions,,,False

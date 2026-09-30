@@ -38,9 +38,7 @@ __all__ = [
 ]
 
 #: Directory holding the bundled example files.
-EXAMPLE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "data", "example")
-)
+EXAMPLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "example")
 
 
 def _path(name: str) -> str:
@@ -141,7 +139,7 @@ def load_example_omics(condition: str = "insulin_sensitive") -> Dict[str, pd.Dat
 
 
 def load_example_phosphoproteomics() -> pd.DataFrame:
-    """Phosphoproteomics for the optional Signaling layer (example 04)."""
+    """Phosphoproteomics for the optional Signaling layer."""
     return pd.read_csv(_path("phosphoproteomics.csv"))
 
 
@@ -157,4 +155,18 @@ def load_example_timecourse() -> pd.DataFrame:
     return pd.read_csv(_path("metabolome_timecourse.csv"))
 
 
+def load_example_pathways() -> Dict[str, list]:
+    """Pathway membership of the example reactions.
+
+    Returns
+    -------
+    dict
+        ``{reaction_id: [pathway, ...]}``, the ``pathway_map`` for
+        :func:`~transnet.regulation_axis_summary`.
+    """
+    table = pd.read_csv(_path("reaction_pathways.csv"))
+    return table.groupby("reaction")["pathway"].apply(list).to_dict()
+
+
 __all__.append("load_example_phosphoproteomics")
+__all__.append("load_example_pathways")
