@@ -7,8 +7,9 @@ written out once there, so a correction is made in one place, and
 fails if an author, journal, volume or year has drifted.
 
 The analysis catalogue (`docs/source/transomics_analyses.rst`) names the source
-of each analysis, and every implementing function carries the reference in its
-docstring, so provenance is visible from `help()` as well as from the docs.
+of each analysis in a `:Reference:` field, and `tests/test_catalogue.py` fails if
+an analysis has none. The docstrings describe what the code does and do not
+repeat the references.
 
 The framework TransNet implements, a biochemical network reconstructed across
 omic layers through a defined set of connection technologies, is due to the
