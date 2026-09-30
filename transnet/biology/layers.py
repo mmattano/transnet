@@ -375,16 +375,22 @@ class Metabolome(OmicsLayer):
                 # A compound's neutral form and its zwitterion are separate
                 # ChEBI entries and KEGG cross-references only some of them,
                 # so taking one at random loses ~20% of a typical panel.
+                # Missing values arrive as None or, with pandas' string dtype,
+                # as NaN -- which is truthy, so test for a real string instead.
+                def _id(value):
+                    return isinstance(value, str) and bool(value.strip())
+
                 if "chebi_ids_all" in chem_df.columns:
                     candidates = [
-                        list(c) if isinstance(c, (list, tuple)) else ([c] if c else [])
+                        [x for x in c if _id(x)] if isinstance(c, (list, tuple))
+                        else ([c] if _id(c) else [])
                         for c in chem_df["chebi_ids_all"]
                     ]
                 else:  # older chemical_info_converter
                     candidates = [
-                        [c] if c else [] for c in chem_df["chebi_ids"]
+                        [c] if _id(c) else [] for c in chem_df["chebi_ids"]
                     ]
-                valid_chebi = sorted({c for group in candidates for c in group if c})
+                valid_chebi = sorted({c for group in candidates for c in group})
                 if valid_chebi:
                     kegg_df = chebi_to_kegg(valid_chebi)
                     chebi_kegg_map = {
@@ -392,7 +398,7 @@ class Metabolome(OmicsLayer):
                         for chebi, kegg in zip(
                             kegg_df["chebi_compounds"], kegg_df["kegg_compounds"]
                         )
-                        if kegg
+                        if _id(kegg)
                     }
                     for pubchem, group in zip(input_ids, candidates):
                         kid = next(
