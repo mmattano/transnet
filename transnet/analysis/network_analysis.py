@@ -86,15 +86,15 @@ def identify_hubs(G: nx.Graph, top_n: int = 10) -> List[Tuple[str, int]]:
     """
     Identify hub nodes based on degree.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     G : nx.Graph
         NetworkX graph
     top_n : int
         Number of top hubs to return
         
-    Returns:
-    --------
+    Returns
+    -------
     List[Tuple[str, int]]
         List of (node, degree) tuples for the top hubs
     """
@@ -106,15 +106,15 @@ def compute_centrality_measures(G: nx.Graph, top_n: int = 10) -> Dict[str, List[
     """
     Compute various centrality measures for nodes.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     G : nx.Graph
         NetworkX graph
     top_n : int
         Number of top nodes to return for each measure
         
-    Returns:
-    --------
+    Returns
+    -------
     Dict[str, List[Tuple[str, float]]]
         Dictionary mapping centrality measures to lists of (node, value) tuples
     """
@@ -148,15 +148,15 @@ def detect_communities(G: nx.Graph, method: str = 'louvain') -> Dict[str, int]:
     """
     Detect communities in a network.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     G : nx.Graph
         NetworkX graph
     method : str
         Community detection method ('louvain', 'label_propagation', or 'greedy_modularity')
         
-    Returns:
-    --------
+    Returns
+    -------
     Dict[str, int]
         Dictionary mapping nodes to community IDs
     """
@@ -205,8 +205,8 @@ def enrichment_analysis(node_set: List[str],
     """
     Perform enrichment analysis on a set of nodes.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     node_set : List[str]
         Set of nodes to analyze
     background_set : List[str]
@@ -216,8 +216,8 @@ def enrichment_analysis(node_set: List[str],
     method : str
         Statistical method ('hypergeometric' or 'fisher')
         
-    Returns:
-    --------
+    Returns
+    -------
     pd.DataFrame
         Dataframe of enrichment results
     """
@@ -282,124 +282,87 @@ def enrichment_analysis(node_set: List[str],
     return result_df
 
 
-def find_active_modules(G: nx.Graph, 
-                       score_attr: str = 'experimental_value',
-                       n_modules: int = 5) -> List[List[str]]:
-    """
-    Find active modules (subnetworks) based on node scores.
-    
-    Parameters:
-    -----------
+def find_active_modules(G: nx.Graph,
+                        score_attr: str = 'log2fc',
+                        n_modules: int = 5,
+                        absolute: bool = True,
+                        min_size: int = 2) -> List[List[str]]:
+    """Connected groups of strongly changed molecules.
+
+    Each measured node is scored by how far its value lies above the average
+    (a z-score of ``|value|`` when ``absolute``). Nodes without a value, such as
+    reactions, score 0 and act as connectors. A module starts at the highest
+    scoring node and grows one neighbour at a time while the total score
+    rises. A connector is added together with the best node behind it, so a
+    module can run from an enzyme through its reaction to a metabolite. The
+    module's nodes are then removed and the next module is grown.
+
+    Parameters
+    ----------
     G : nx.Graph
-        NetworkX graph with node scores
+        Network with a numeric node attribute ``score_attr``.
     score_attr : str
-        Node attribute containing scores
-    algorithm : str
-        Algorithm for finding modules ('greedy' or 'simulated_annealing')
+        Node attribute holding the measurement, usually ``"log2fc"``.
     n_modules : int
-        Number of modules to return
-        
-    Returns:
-    --------
-    List[List[str]]
-        List of modules (each module is a list of node IDs)
+        Maximum number of modules to return.
+    absolute : bool
+        Score increases and decreases alike. False scores only increases.
+    min_size : int
+        Modules smaller than this are discarded.
+
+    Returns
+    -------
+    list of list of str
+        Node ids per module, largest total score first.
     """
-    # Convert absolute scores to Z-scores
-    scores = []
-    for node in G.nodes():
-        score = G.nodes[node].get(score_attr)
-        if score is not None:
-            scores.append(score)
-    
-    if not scores:
+    values = {n: G.nodes[n].get(score_attr) for n in G.nodes()}
+    values = {n: (abs(v) if absolute else v) for n, v in values.items()
+              if v is not None and not (isinstance(v, float) and np.isnan(v))}
+    if not values:
         logger.error("No scores found in the network")
         return []
-    
-    mean_score = np.mean(scores)
-    std_score = np.std(scores)
-    
+    std_score = np.std(list(values.values()))
     if std_score == 0:
         logger.error("All scores are identical, can't compute Z-scores")
         return []
-    
-    for node in G.nodes():
-        score = G.nodes[node].get(score_attr)
-        if score is not None:
-            G.nodes[node]['z_score'] = (score - mean_score) / std_score
-        else:
-            G.nodes[node]['z_score'] = 0.0
-    
-    return _find_modules_greedy(_simple_undirected(G), n_modules)
+    mean_score = np.mean(list(values.values()))
+    z_scores = {n: (values.get(n, mean_score) - mean_score) / std_score
+                if n in values else 0.0 for n in G.nodes()}
 
-def _find_modules_greedy(G: nx.Graph, n_modules: int) -> List[List[str]]:
-    """
-    Find active modules using a greedy algorithm.
-    
-    Parameters:
-    -----------
-    G : nx.Graph
-        NetworkX graph with z_score node attribute
-    n_modules : int
-        Number of modules to return
-        
-    Returns:
-    --------
-    List[List[str]]
-        List of modules (each module is a list of node IDs)
-    """
+    remaining = _simple_undirected(G)
     modules = []
-    remaining_graph = G.copy()
-    
-    for _ in range(n_modules):
-        if remaining_graph.number_of_nodes() == 0:
+    while len(modules) < n_modules and remaining.number_of_nodes():
+        seed = max(remaining.nodes(), key=lambda n: z_scores[n])
+        if z_scores[seed] <= 0:
             break
-        
-        # Start from the node with the highest score
-        seed_node = max(remaining_graph.nodes(), 
-                       key=lambda n: remaining_graph.nodes[n].get('z_score', 0))
-        
-        current_module = [seed_node]
-        current_score = remaining_graph.nodes[seed_node].get('z_score', 0)
-        
-        # Grow the module greedily
-        while True:
-            # Get neighbors of the current module
-            neighbors = set()
-            for node in current_module:
-                neighbors.update(set(remaining_graph.neighbors(node)))
-            
-            # Remove nodes already in the module
-            neighbors -= set(current_module)
-            
-            if not neighbors:
-                break
-            
-            # Find the neighbor that increases the score the most
-            best_node = None
-            best_score_increase = 0
-            
-            for neighbor in neighbors:
-                new_score = current_score + remaining_graph.nodes[neighbor].get('z_score', 0)
-                score_increase = new_score - current_score
-                
-                if score_increase > best_score_increase:
-                    best_score_increase = score_increase
-                    best_node = neighbor
-            
-            # Stop if no neighbor improves the score
-            if best_score_increase <= 0:
-                break
-            
-            # Add the best neighbor to the module
-            current_module.append(best_node)
-            current_score += best_score_increase
-        
-        # Add the module to the results
-        modules.append(current_module)
-        
-        # Remove the module nodes from the remaining graph
-        remaining_graph.remove_nodes_from(current_module)
-    
+        module = _grow_module(remaining, seed, z_scores)
+        remaining.remove_nodes_from(module)
+        if len(module) >= min_size:
+            modules.append(module)
     return modules
+
+
+def _grow_module(G: nx.Graph, seed: str, z_scores: Dict[str, float]) -> List[str]:
+    """Greedy growth with a one-step look-ahead through connectors."""
+    module = [seed]
+    members = {seed}
+    while True:
+        frontier = {m for n in module for m in G.neighbors(n)} - members
+        best_gain, best_nodes = 0.0, None
+        for candidate in frontier:
+            gain = z_scores[candidate]
+            if gain > best_gain:
+                best_gain, best_nodes = gain, [candidate]
+            if gain <= 0:
+                behind = [m for m in G.neighbors(candidate) if m not in members]
+                if behind:
+                    after = max(behind, key=lambda m: z_scores[m])
+                    two_step = gain + z_scores[after]
+                    if two_step > best_gain:
+                        best_gain, best_nodes = two_step, [candidate, after]
+        if best_nodes is None:
+            return module
+        module.extend(best_nodes)
+        members.update(best_nodes)
 
 

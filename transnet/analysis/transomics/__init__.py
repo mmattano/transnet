@@ -1,40 +1,22 @@
-"""Trans-omics network analysis -- TransNet's headline API.
+"""The trans-omic analyses.
 
-A trans-omic network is a typed, directed, signed regulatory hierarchy:
+Every analysis here uses the network's edge types, directions and signs:
 
-    signal -> TF -> gene -> enzyme protein -> REACTION <- metabolite
+* reconstruction: :func:`responsive_subnetwork`
+* regulation axes: :func:`reaction_regulation_table`,
+  :func:`regulation_axis_summary`, :func:`metabolite_regulatory_roles`
+* signed paths and propagation: :func:`trace_regulatory_paths`,
+  :func:`hierarchical_propagation`, :func:`downstream_influence`
+* topology: :func:`cross_layer_connectivity`, :func:`transomic_hubs`
+* timing: :func:`assign_temporal_parameters`, :func:`temporal_network_structure`
+* the gene axis: :func:`transcription_factor_activity`,
+  :func:`expression_concordance`
+* structure: :func:`regulatory_motifs`, :func:`structural_vulnerability`,
+  :func:`convergence_significance`
+* comparison: :func:`compare_transomic_networks`
 
-with the metabolic reaction as the convergence point.  Every analysis here is
-meaningful only because of that structure -- remove the edges and none of it can
-be computed.  For generic multi-omics factor analysis, which does not use the
-network, see :mod:`transnet.analysis.factor`.
-
-The documented analysis catalogue
----------------------------------
-
-=====  ============================================  ===========================================
-Code   Analysis                                      Function
-=====  ============================================  ===========================================
-network reconstruction     Trans-omic network reconstruction             :meth:`~transnet.Transnet.generate_graph`,
-                                                     :func:`responsive_subnetwork`
-reaction regulation axes     Reaction regulation-axis attribution          :func:`reaction_regulation_table`
-per-pathway balance     Per-pathway regulation balance                :func:`regulation_axis_summary`
-signed regulatory paths     Signed regulatory-path tracing                :func:`trace_regulatory_paths`
-cross-layer connectivity     Cross-layer connectivity                      :func:`cross_layer_connectivity`
-trans-omic hubs     Trans-omic hub identification                 :func:`transomic_hubs`
-response timing     Temporal / dose structure on the network      :func:`assign_temporal_parameters`,
-                                                     :func:`temporal_network_structure`
-=====  ============================================  ===========================================
-
-Layers are optional
--------------------
-
-No analysis here requires a particular layer.  Each one discovers what the
-network actually contains and degrades by reporting weaker evidence rather than
-by failing: :func:`reaction_regulation_table` records which chain of layers
-supported its gene-axis call, and :func:`trace_regulatory_paths` infers its own
-starting layer.  A transcriptome + metabolome network gets the full trans-omics
-story for the layers it has.
+No analysis requires a particular layer; each uses the layers the network
+has and reports what its result rests on.
 """
 
 from transnet.analysis.transomics.mapping import (

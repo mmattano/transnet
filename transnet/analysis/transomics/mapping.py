@@ -1,9 +1,8 @@
-"""Map measured omics data onto trans-omic network nodes.
+"""Map measured omics data onto the nodes of a trans-omic network.
 
-One entry point, one set of node attributes, and an explicit report of what did
-and did not match.  Identifier mismatch between an omics table and a network is
-the most common failure in trans-omic analysis and the easiest to miss, so
-:func:`map_omics_to_network` always tells you how many features landed.
+:func:`map_omics_to_network` always reports how many rows of each table
+found a node, because an identifier mismatch raises no error and is easy to
+miss.
 """
 
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -149,48 +148,39 @@ def map_omics_to_network(
 ) -> MappingReport:
     """Write measured values onto the nodes of ``graph``, in place.
 
-    Every node that matches a supplied feature gains ``value``, ``log2fc``,
-    ``qvalue`` and ``regulated``; ``regulated`` is ``+1`` / ``-1`` / ``0`` and
-    is what the rest of the trans-omics analyses read.
+    Every matched node gains ``value``, ``log2fc``, ``qvalue``, ``measured`` and
+    ``regulated`` (+1, -1 or 0), which the analyses read.
 
     Parameters
     ----------
     graph : networkx.Graph
-        A trans-omic network.  Nodes must carry a ``layer`` attribute.
+        A trans-omic network whose nodes have a ``layer`` attribute.
     tables : mapping of str to pandas.DataFrame
-        ``{layer_name: table}``, e.g.
-        ``{"Transcriptome": deg_table, "Metabolome": dem_table}``.  Layers not
-        present in the graph are reported and skipped -- supplying a
-        phosphoproteomics table to a network with no Signaling layer is a
-        warning, not an error.
+        ``{layer: table}``, for example ``{"Transcriptome": genes,
+        "Metabolome": metabolites}``. A table for a layer the network lacks is
+        reported, not raised.
     id_column, value_column, log2fc_column, qvalue_column : str, optional
-        Column names, applied to every table.  ``id_column`` defaults to the
-        first column.  If ``log2fc_column`` is absent but ``value_column`` is
-        given, the value is used for direction as well.
+        Column names, the same for every table. ``id_column`` defaults to the
+        first column. Without ``log2fc_column``, ``value_column`` gives the
+        direction.
     qvalue_threshold : float
-        A feature is called regulated only if its q-value is at or below this.
-        Tables with no q-value column are called on fold change alone.
+        Maximum q-value for a molecule to count as changed.
     log2fc_threshold : float
-        Minimum absolute log2 fold change for a feature to count as regulated.
+        Minimum absolute log2 fold change for a molecule to count as changed.
     id_map : mapping, optional
-        ``{layer: {table_identifier: node_identifier}}`` for layers whose
-        table uses a different identifier space than the network.
+        ``{layer: {table id: node id}}`` for tables that use other identifiers
+        than the network.
     max_unmatched_examples : int
-        How many unmatched identifiers to keep per layer for the report.
+        Unmatched identifiers to keep per layer in the report.
+    se_column : str, optional
+        Column with the standard error of the fold change, used by
+        :func:`~transnet.expression_concordance`.
 
     Returns
     -------
     MappingReport
-        Print it -- it names any layer where most features failed to match.
-
-    Examples
-    --------
-    >>> report = map_omics_to_network(
-    ...     G,
-    ...     {"Transcriptome": degs, "Metabolome": dems},
-    ...     id_column="id", log2fc_column="log2FC", qvalue_column="padj",
-    ... )
-    >>> print(report)
+        ``per_layer`` (rows supplied and matched, match fraction, numbers up and
+        down), ``match_rate`` and ``unmatched``.
     """
     nodes_by_layer: Dict[str, Dict[str, Any]] = {}
     for node, data in graph.nodes(data=True):
@@ -357,35 +347,24 @@ def build_name_id_map(
     names: Sequence[str],
     layer: str = "Metabolome",
 ) -> Dict[str, str]:
-    """Resolve a table's compound *names* to the identifiers the network uses.
+    """Map metabolite names to the network's KEGG compound ids.
 
-    Real metabolomics tables are keyed by name ("Isocitrate", "alpha-Aminoadipic
-    acid"), while the network is keyed by KEGG compound id. This builds the
-    ``id_map`` that :func:`map_omics_to_network` needs, matching against every
-    synonym in each node's ``name`` (KEGG stores them ``;``-separated),
-    case-insensitively and ignoring hyphen/space differences.
+    Matches each name against every KEGG synonym on the network's nodes,
+    ignoring case, hyphens and spaces.
 
     Parameters
     ----------
     graph : networkx.Graph
     names : sequence of str
-        The identifiers appearing in your table.
+        The names in the table.
     layer : str
-        Layer to resolve against.
+        Layer to match against.
 
     Returns
     -------
     dict
-        ``{name: node_id}`` for the names that resolved. Names absent from the
-        result did not match any node -- pass the dict straight to
-        ``map_omics_to_network(..., id_map={layer: mapping})`` and the mapping
-        report will count the rest as unmatched.
-
-    Examples
-    --------
-    >>> mapping = build_name_id_map(graph, metabolomics["feature"])
-    >>> map_omics_to_network(graph, {"Metabolome": metabolomics},
-    ...                      id_map={"Metabolome": mapping})
+        ``{name: node id}`` for the names that matched, ready for
+        ``map_omics_to_network(..., id_map={layer: mapping})``.
     """
     def _normalise(value: str) -> str:
         text = str(value).strip().lower()
@@ -432,38 +411,25 @@ def build_alias_id_map(
     layer: str,
     alias_attribute: str,
 ) -> Dict[str, str]:
-    """Map a layer's *other* identifiers to the ones its nodes use.
+    """Map a layer's other identifiers to the ids its nodes use.
 
-    A network node is keyed by one identifier -- Entrez for genes, KEGG for
-    metabolites -- but the element behind it usually knows several. An omics
-    table keyed by Ensembl or PubChem therefore matches nothing, even though
-    the translation is sitting in the layer already. This extracts it, with no
-    database call.
+    Reads the translation from the layer objects, without a database call: a
+    metabolite node keyed by KEGG id usually also knows its PubChem id.
 
     Parameters
     ----------
     network : transnet.Transnet
-        A network whose layers are populated.
+        A network with populated layers.
     layer : str
-        Layer to read, e.g. ``"Metabolome"``.
+        Layer to read, for example ``"Metabolome"``.
     alias_attribute : str
-        The element attribute holding your table's identifier, e.g.
-        ``"pubchem_id"`` or ``"ensembl_id"``. List-valued attributes are
-        expanded, so every alias maps to the node.
+        The element attribute holding the table's identifier, for example
+        ``"pubchem_id"`` or ``"ensembl_id"``.
 
     Returns
     -------
     dict
-        ``{alias: node_id}``, ready to pass as
-        ``map_omics_to_network(..., id_map={layer: mapping})``.
-
-    Examples
-    --------
-    >>> id_map = {
-    ...     "Transcriptome": build_alias_id_map(net, "Transcriptome", "ensembl_id"),
-    ...     "Metabolome": build_alias_id_map(net, "Metabolome", "pubchem_id"),
-    ... }
-    >>> map_omics_to_network(graph, tables, id_map=id_map)
+        ``{alias: node id}``, ready for ``map_omics_to_network(..., id_map=...)``.
     """
     if layer not in _LAYER_ELEMENTS:
         raise ValueError(
@@ -523,53 +489,38 @@ def map_modification_sites(
     sign: int = 0,
     evidence: str = "measured modification site",
 ) -> Dict[str, int]:
-    """Attach measured modification sites to the proteins they sit on.
+    """Add measured modification sites to the network, one node per site.
 
-    Phosphoproteomics measures sites, not proteins, and a site is a regulator of
-    its protein's activity rather than a measure of how much of it there is. So
-    each site becomes its own ``Signaling`` node, ``<protein>_<site>``, with an
-    edge into the protein. Several sites on one protein stay separate nodes,
-    because they can move in opposite directions.
-
-    The edge is unsigned by default. Whether more phosphorylation at a given site
-    raises or lowers catalytic activity is site-specific and usually unrecorded,
-    and :func:`~transnet.reaction_regulation_table` reports the site's direction
-    and its effect on the reaction in separate columns for that reason. Pass
-    ``sign`` only for a set of sites whose effect is actually known.
+    Each site becomes a Signaling node, ``<protein>_<site>``, with an edge to its
+    protein. The edge has no sign by default, because whether a site activates or
+    inhibits its protein is rarely known; set ``sign`` only when it is.
 
     Parameters
     ----------
     graph : networkx.MultiDiGraph
-        A network to add to, modified in place.
+        The network, modified in place.
     table : pandas.DataFrame
-        One row per site, as :func:`transnet.datasets.load_motrpac_ptm` returns.
+        One row per site.
     protein_column, site_column : str
         Columns naming the protein and the site.
     log2fc_column, qvalue_column : str
-        Columns holding the measured change and its adjusted p-value.
+        Columns with the measured change and its adjusted p-value.
     qvalue_threshold, log2fc_threshold : float
-        A site counts as changed at or below the q-value and at or above the
-        absolute fold change.
+        Thresholds for a site to count as changed.
     id_map : mapping, optional
-        ``{protein in the table: node in the graph}``, for the usual case where
-        the assay reports RefSeq accessions and the network is keyed by UniProt.
-        Proteins absent from the map are looked up directly.
-    edge_type : {"phosphorylation", ...}
-        The relationship to record. Acetylation and ubiquitination have no edge
-        type of their own in the schema, so they are attached as
-        ``phosphorylation`` only if you mean them to feed the phospho axis;
-        otherwise keep them out of the graph and analyse the table directly.
+        ``{table protein id: node id}``, for example RefSeq to UniProt.
+    edge_type : str
+        Edge type to record. ``"phosphorylation"`` feeds the phospho axis of
+        :func:`~transnet.reaction_regulation_table`.
     sign : int
-        Edge sign: 0 (unknown) unless the effect on activity is known.
+        Edge sign: 0 unless the effect on activity is known.
     evidence : str
         Provenance recorded on each edge.
 
     Returns
     -------
     dict
-        ``n_sites`` supplied, ``n_mapped`` attached to a protein in the graph,
-        ``n_changed`` of those that passed the thresholds, and ``n_proteins``
-        carrying at least one attached site.
+        ``n_sites``, ``n_mapped``, ``n_changed`` and ``n_proteins``.
     """
     proteins = {
         node for node, data in graph.nodes(data=True)

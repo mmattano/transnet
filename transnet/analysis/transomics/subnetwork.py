@@ -4,16 +4,6 @@ The core construct of a trans-omic study is not the whole reference network but
 the *responsive* part of it: the molecules that changed, in every layer, plus
 the regulatory edges that connect them.  That subnetwork is the object papers
 draw, count and compare between conditions.
-
-References
-----------
-Kawata K, et al. Trans-omic Analysis Reveals Selective Responses to Induced and
-Basal Insulin across Signaling, Transcriptional, and Metabolic Networks.
-*iScience* 7:212-229, 2018.
-
-Egami R, et al. Trans-omic analysis reveals obesity-associated dysregulation of
-inter-organ metabolic cycles between the liver and skeletal muscle. *iScience*
-24(3):102217, 2021.
 """
 
 from typing import Dict, List, Optional, Sequence
@@ -116,31 +106,24 @@ def compare_transomic_networks(
     name1: str = "condition_1",
     name2: str = "condition_2",
 ) -> Dict[str, object]:
-    """Compare two trans-omic networks layer by layer and relationship by relationship.
+    """Compare two trans-omic networks per layer and per edge type.
 
-    Where a generic differential-network comparison reports shared and unique
-    edges, this reports *which kinds of regulation* were gained and lost -- a
-    condition that loses its allosteric edges but keeps its transcriptional ones
-    is a different biological story from the reverse, and the edge-type
-    breakdown is what tells them apart.
+    Besides shared and unique nodes and edges, this reports which *kinds* of
+    regulation each network has, and which molecules changed in opposite
+    directions.
 
     Parameters
     ----------
     graph1, graph2 : networkx.Graph
     name1, name2 : str
-        Labels used in the returned tables.
+        Labels for the two networks in the returned tables.
 
     Returns
     -------
     dict
-        ``nodes_by_layer`` : pandas.DataFrame
-            Per layer: node counts in each network, shared, and unique to each.
-        ``edges_by_type`` : pandas.DataFrame
-            Per relationship: edge counts, shared, and unique to each.
-        ``regulation_shifts`` : pandas.DataFrame
-            Nodes whose regulated direction differs between the two networks.
-        ``summary`` : dict
-            Node and edge totals plus Jaccard similarity.
+        ``nodes_by_layer`` and ``edges_by_type``: counts in each network, shared
+        and unique. ``regulation_shifts``: molecules whose direction differs.
+        ``summary``: totals and the Jaccard index of nodes and edges.
     """
     def _edge_key(graph):
         return {

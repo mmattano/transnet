@@ -1,15 +1,9 @@
-"""Directed, sign-aware propagation down the trans-omic hierarchy.
+"""Directed, signed propagation down the trans-omic hierarchy.
 
-Ordinary network propagation treats every edge as an undirected similarity. In a
-trans-omic network that throws away the two things the edges were built to
-carry: a transcription factor regulates its target and not the reverse, and an
-allosteric inhibitor pushes its reaction the *other* way.
-
-:func:`hierarchical_propagation` walks the regulatory hierarchy in its own
-direction and multiplies by the edge sign, so a score arriving at a reaction
-through an inhibitor arrives negative.  The undirected random-walk-with-restart
-in :mod:`transnet.analysis.network_propagation` remains the right tool when you
-want diffusion-based similarity rather than regulatory flow.
+:func:`hierarchical_propagation` pushes seed scores along directed edges and
+multiplies by each edge's sign, so a score passing an inhibitor arrives
+negative. For undirected diffusion, use
+:func:`transnet.analysis.network_propagation.random_walk_with_restart`.
 """
 
 from typing import Dict

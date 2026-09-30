@@ -476,8 +476,8 @@ def _lookup_metabolite_record(met) -> dict:
                 record = hmdb_get_metabolite(results.iloc[0]["hmdb_id"])
                 if record:
                     return record
-        except Exception:
-            pass
+        except Exception as error:
+            logger.debug("HMDB lookup failed for %s: %s", getattr(met, "kegg_compound_id", met), error)
 
     # Priority 3: KEGG compound ID
     kegg_id = getattr(met, "kegg_compound_id", None)
@@ -488,8 +488,8 @@ def _lookup_metabolite_record(met) -> dict:
                 record = hmdb_get_metabolite(results.iloc[0]["hmdb_id"])
                 if record:
                     return record
-        except Exception:
-            pass
+        except Exception as error:
+            logger.debug("HMDB lookup failed for %s: %s", getattr(met, "kegg_compound_id", met), error)
 
     # Priority 4: name search
     name = getattr(met, "kegg_name", None)
@@ -500,7 +500,7 @@ def _lookup_metabolite_record(met) -> dict:
                 record = hmdb_get_metabolite(results.iloc[0]["hmdb_id"])
                 if record:
                     return record
-        except Exception:
-            pass
+        except Exception as error:
+            logger.debug("HMDB lookup failed for %s: %s", getattr(met, "kegg_compound_id", met), error)
 
     return {}

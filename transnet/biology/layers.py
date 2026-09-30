@@ -38,16 +38,18 @@ class OmicsLayer:
         self.name = name
         self.elements = []
         
-    def add_experimental_data(self, 
-                             input_data: pd.DataFrame = None, 
-                             id_column: str = None, 
-                             id_type: str = None):
+    def add_experimental_data(self,
+                              input_data: pd.DataFrame = None,
+                              id_column: str = None,
+                              id_type: str = None):
         """Add experimental data to this layer."""
-        pass
-        
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not take experimental data; "
+            "map measurements onto the built graph with map_omics_to_network")
+
     def populate(self):
         """Populate this layer with data from databases."""
-        pass
+        raise NotImplementedError(f"{self.__class__.__name__} has no populate method")
         
     def __repr__(self):
         return f"<{self.__class__.__name__}: {len(self.elements)} elements>"
@@ -73,8 +75,8 @@ class Reactions(OmicsLayer):
         """
         Populate reactions from KEGG API or from a dataframe.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         from_api : bool
             Whether to populate reactions from KEGG API
         df : pd.DataFrame
@@ -306,8 +308,8 @@ class Metabolome(OmicsLayer):
         """
         Add experimental metabolomics data.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         input_data : pd.DataFrame
             Dataframe containing experimental data
         metabolite_column_name : str
@@ -484,8 +486,8 @@ class Transcriptome(OmicsLayer):
         """
         Add experimental transcriptomics data.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         input_data : pd.DataFrame
             Dataframe containing experimental data
         transcript_column_name : str
@@ -506,9 +508,7 @@ class Transcriptome(OmicsLayer):
         organism_full: str = None,
         ensembl: bool = False,
         ensembl_release: int = 109,
-        kegg_ftp: bool = False,
         kegg_api: bool = False,
-        ftp_base_path: str = None,
         biotype: str = None,
         transcript_column_name: str = None,
         input_data_value_column_name: str = None,
@@ -517,8 +517,8 @@ class Transcriptome(OmicsLayer):
         """
         Populate transcriptome with data.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         kegg_organism : str
             KEGG organism code
         organism_full : str
@@ -540,7 +540,7 @@ class Transcriptome(OmicsLayer):
         self.organism_full = organism_full or self.organism_full
         self.genes = []
         
-        if not ensembl and not kegg_api and not kegg_ftp:
+        if not ensembl and not kegg_api:
             # Default to KEGG API if no source specified
             kegg_api = True
             
@@ -689,9 +689,7 @@ class Transcriptome(OmicsLayer):
             except Exception as e:
                 logger.error(f"Error getting genes from Ensembl: {e}")
                 logger.warning("Using empty transcriptome")
-        
-        elif kegg_ftp:
-            logger.warning("KEGG FTP not implemented yet")
+
             
 
     def fill_gene_info(self):
@@ -803,8 +801,8 @@ class Proteome(OmicsLayer):
         """
         Add experimental proteomics data.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         input_data : pd.DataFrame
             Dataframe containing experimental data
         protein_column_name : str
@@ -836,8 +834,8 @@ class Proteome(OmicsLayer):
         """
         Populate proteome with data.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         kegg_organism : str
             KEGG organism code
         ncbi_organism : str
@@ -1127,8 +1125,8 @@ class Proteome(OmicsLayer):
         """
         Get transcription factor targets from ChIP-Atlas.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         genome_ChIP : str
             Genome assembly in ChIP-Atlas
         distance_ChIP : int
@@ -1430,12 +1428,6 @@ class Signaling(OmicsLayer):
     the layer is designed to be filled either from KEGG signaling pathways or
     from a user-supplied table (PhosphoSitePlus, an in-house phosphoproteomics
     result, or any two-column kinase/substrate list).
-
-    References
-    ----------
-    Yugi K, et al. Trans-Omics: How To Reconstruct Biochemical Networks Across
-    Multiple 'Omic' Layers. *Trends in Biotechnology* 34(4):276-290, 2016 --
-    kinase-substrate relationships as one of the five connection technologies.
     """
 
     def __init__(self):

@@ -1,34 +1,13 @@
-"""Reaction regulation-axis attribution -- the central trans-omics analysis.
+"""Which axis regulates each reaction: enzyme amount, metabolites, or both.
 
-A metabolic reaction is regulated from two directions at once:
+A reaction can change through the *gene-expression axis* (the amount of its
+enzyme, set by transcription and translation) or through the *metabolite axis*
+(its substrates, products and allosteric regulators). Reactions where the two
+point in opposite directions are flagged as ``controversial``.
 
-* the **gene-expression axis** -- signal -> TF -> gene -> enzyme protein, changing
-  how much enzyme there is;
-* the **metabolite axis** -- substrates, products and allosteric effectors,
-  changing how hard the enzyme works.
-
-Asking which of the two moved, and whether they agree, is what distinguishes a
-trans-omic analysis from a pathway enrichment.  Kokaji et al. found that in
-obese mouse liver roughly half of all differentially regulated reactions receive
-*opposing* input from the two axes -- reactions this module flags as
-``controversial``.
-
-Both axes degrade gracefully.  The metabolite axis needs only a Metabolome and a
-Reactions layer.  The gene axis uses the longest chain the network actually has:
-TF -> gene -> protein where all three layers exist, gene -> protein where there
-is no TF evidence, protein alone where there is no transcriptome.  Every row
-records which evidence backed it in ``gene_axis_evidence``, so a thin network
-produces visibly weaker claims rather than silently wrong ones.
-
-References
-----------
-Kokaji T, et al. Transomics analysis reveals allosteric and gene regulation axes
-for altered hepatic glucose-responsive metabolism in obesity. *Science Signaling*
-13(660):eaaz1236, 2020.
-
-Egami R, et al. Trans-omic analysis reveals obesity-associated dysregulation of
-inter-organ metabolic cycles between the liver and skeletal muscle. *iScience*
-24(3):102217, 2021.
+Both axes use whatever layers the network has. ``gene_axis_evidence`` records
+which layers supported each enzyme-axis call, so a network with fewer layers
+gives visibly weaker calls rather than wrong ones.
 """
 
 from typing import Dict, Optional, Sequence
@@ -214,85 +193,49 @@ def reaction_regulation_table(
     Parameters
     ----------
     graph : networkx.Graph
-        A trans-omic network with omics data mapped on
-        (:func:`~transnet.analysis.transomics.mapping.map_omics_to_network`).
+        A trans-omic network with omics data mapped onto it.
     reactions : sequence of str, optional
-        Restrict to these reaction nodes.  Defaults to every node in the
-        ``Reactions`` layer.
+        Reactions to include. Default: the whole Reactions layer.
     include_substrate_product : bool
-        Count substrate and product concentration changes as part of the
-        metabolite axis, alongside allosteric effectors.  Set False to restrict
-        the metabolite axis to allosteric regulation only.
+        Count substrate and product changes in the metabolite axis. False
+        restricts the axis to allosteric regulators.
     exclude_currency_metabolites : bool
-        Ignore cofactors such as NADH, ATP and H2O *in their substrate and
-        product roles* (default).  They take part in hundreds of reactions, so
-        a change in one would otherwise mark every dehydrogenase in the network
-        as metabolite-regulated -- a statement about connectivity, not biology.
-        Their allosteric roles are always kept: AMP activating
-        phosphofructokinase is precisely the specific regulation being looked
-        for.
+        Ignore cofactors such as ATP, NADH and water as substrates and products
+        (default), since they take part in hundreds of reactions. Their allosteric
+        roles are always kept.
     currency_metabolites : sequence of str, optional
-        Override the default set
-        (:data:`transnet.biology.schema.CURRENCY_METABOLITES`).
+        Replaces the default set, ``transnet.biology.schema.CURRENCY_METABOLITES``.
 
     Returns
     -------
     pandas.DataFrame
-        One row per reaction, with columns:
+        One row per reaction:
 
         ``reaction``, ``name``, ``ec``, ``reversible``
-            Identity of the reaction.
-        ``gene_axis``, ``gene_axis_evidence``, ``gene_axis_via``
-            Direction (+1/-1/0) of enzyme-level regulation, which chain of
-            layers supported it (``"protein"``, ``"gene_protein"``,
-            ``"tf_gene_protein"``, or ``None``), and the molecules involved.
-            ``gene_axis_transcript_support`` says whether a transcript encoding
-            a regulating enzyme changed in the same direction: True for
-            transcriptional regulation, False where the enzyme changed and its
-            measured transcript did not (post-transcriptional), None where no
-            transcript was measured. ``gene_axis_evidence`` alone cannot tell
-            these apart, because a changed protein is always its strongest
-            evidence.
-        ``phospho_axis``, ``phospho_axis_effect``, ``phospho_axis_via``
-            Enzyme phosphorylation, present only for a network with a Signaling
-            layer and phosphoproteomics mapped onto it. ``phospho_axis`` is the
-            direction the site itself moved; ``phospho_axis_effect`` is what that
-            does to the reaction, and it is 0 unless the edge carries a sign,
-            because whether a given site activates or inhibits is site-specific
-            and usually unrecorded. The two are kept out of ``gene_axis`` for
-            that reason: merging an unsigned effect into a signed axis would
-            invent a direction. A reaction with ``gene_axis`` of 0 and a non-zero
-            ``phospho_axis`` is one whose enzyme amount held steady while its
-            modification state moved, which an abundance-only reading misses.
-            ``n_phosphosites_changed`` counts the changed sites, because sites on
-            one enzyme can move opposite ways: a reaction with several changed
-            sites and a ``phospho_axis`` of 0 is phospho-regulated without a
-            single direction, which is not the same as having no changed site.
+            The reaction.
+        ``gene_axis``
+            Direction of enzyme-level regulation: +1, -1 or 0.
+        ``gene_axis_evidence``
+            Layers that supported it: ``"protein"``, ``"gene_protein"``,
+            ``"gene"``, ``"tf_gene_protein"`` or None.
+        ``gene_axis_via``
+            The molecules behind the call.
+        ``gene_axis_transcript_support``
+            True if a transcript of the enzyme changed the same way, False if the
+            enzyme changed and its measured transcript did not, None if no
+            transcript was measured.
+        ``phospho_axis``, ``phospho_axis_effect``, ``n_phosphosites_changed``, ``phospho_axis_via``
+            Phosphorylation of the enzyme, when sites are mapped:
+            the direction the sites moved, its effect on the reaction (0 unless
+            the edge has a sign), and how many sites changed.
         ``metabolite_axis``, ``n_activators``, ``n_inhibitors``
-            Direction of metabolite-mediated regulation and the counts behind
-            it.
+            Direction of metabolite regulation and the counts behind it.
         ``allosteric_regulators``, ``substrates_changed``, ``products_changed``
-            The specific metabolites driving the metabolite axis.
+            The metabolites behind the metabolite axis.
         ``consensus``
             Overall direction when the axes agree or only one is informative.
         ``controversial``
             True when the two axes point in opposite directions.
-
-        Empty (with these columns) if the network has no Reactions layer.
-
-    Notes
-    -----
-    A reaction with ``gene_axis_evidence`` of ``None`` was assessed on the
-    metabolite axis alone -- the claim is real but rests on one axis.
-
-    References
-    ----------
-    Kokaji T, Hatano A, Ito Y, et al. *Science Signaling* 13(660):eaaz1236, 2020.
-
-    Egami R, Kokaji T, Hatano A, et al. *iScience* 24(3):102217, 2021.
-
-    Ohno S, Quek LE, Krycer JR, et al. *iScience* 23(9):101479, 2020 (enzyme
-    phosphorylation as a regulatory layer).
     """
     columns = [
         "reaction", "name", "ec", "reversible",
@@ -495,26 +438,25 @@ def regulation_axis_summary(
     pathway_map: Optional[Dict[str, str]] = None,
     responsive_only: bool = True,
 ) -> pd.DataFrame:
-    """Aggregate a reaction regulation table into per-pathway axis balance.
-
-    This is the standard trans-omics summary figure: for each pathway, what
-    fraction of its reactions the enzyme axis activates or inhibits, what
-    fraction the metabolite axis does, and how often the two disagree.
+    """Summarise a regulation table per pathway.
 
     Parameters
     ----------
     table : pandas.DataFrame
         Output of :func:`reaction_regulation_table`.
     pathway_map : dict, optional
-        ``{reaction_id: pathway}``.  Without it every reaction is pooled into a
-        single ``"all"`` group, which still gives the global axis balance.
+        ``{reaction: pathway}`` or ``{reaction: [pathway, ...]}``, for example
+        from :func:`transnet.api.kegg_reaction_pathways`. A reaction in several
+        pathways is counted in each. Without a map all reactions form one
+        ``"all"`` row.
     responsive_only : bool
-        Restrict to reactions regulated on at least one axis (default).
+        Count only reactions regulated on at least one axis (default).
 
     Returns
     -------
     pandas.DataFrame
-        One row per pathway with counts and fractions per axis.
+        One row per pathway: reaction count, reactions activated and inhibited
+        on each axis, and the number and fraction of controversial reactions.
     """
     columns = [
         "pathway", "n_reactions",
@@ -532,10 +474,16 @@ def regulation_axis_summary(
     if data.empty:
         return pd.DataFrame(columns=columns)
 
-    data["pathway"] = (
-        data["reaction"].map(pathway_map).fillna("unassigned")
-        if pathway_map else "all"
-    )
+    if pathway_map:
+        def _pathways(reaction):
+            value = pathway_map.get(reaction)
+            if value is None or (isinstance(value, float) and np.isnan(value)):
+                return ["unassigned"]
+            return [value] if isinstance(value, str) else list(value) or ["unassigned"]
+        data["pathway"] = data["reaction"].map(_pathways)
+        data = data.explode("pathway")
+    else:
+        data["pathway"] = "all"
 
     rows = []
     for pathway, group in data.groupby("pathway"):
@@ -566,71 +514,28 @@ def metabolite_regulatory_roles(
     graph,
     metabolites: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
-    """Ask of each metabolite: does it *regulate* anything, or only participate?
+    """Classify each metabolite as an allosteric regulator or not.
 
-    A metabolite can sit in a network in two very different ways. It can be
-    consumed and produced -- mass flowing through the pathway -- or it can be an
-    allosteric effector, changing how fast an enzyme works without being
-    changed itself. BRENDA annotates the second kind, and those annotations
-    become ``allosteric_activation`` / ``allosteric_inhibition`` edges when the
-    network is built with :meth:`transnet.biology.layers.Proteome.get_brenda_kinetics`.
-
-    This reads those edges back off the graph, so a differential metabolite can
-    be classified by what it *does*: a regulator whose concentration moved is a
-    mechanistic hypothesis, whereas a substrate whose concentration moved is
-    often just a consequence.
+    The allosteric edges come from BRENDA. A changed metabolite that regulates an
+    enzyme is a candidate mechanism; one that is only a substrate or product often
+    just follows the flux.
 
     Parameters
     ----------
     graph : networkx.Graph
-        A trans-omic network. Data mapped with
-        :func:`~transnet.analysis.transomics.mapping.map_omics_to_network` adds
-        the differential columns; without it the structural columns are still
-        returned.
+        A trans-omic network, ideally with omics data mapped onto it.
     metabolites : sequence of str, optional
-        Restrict to these metabolite nodes. Defaults to the whole Metabolome
-        layer.
+        Metabolites to include. Default: the whole Metabolome layer.
 
     Returns
     -------
     pandas.DataFrame
-        One row per metabolite:
-
-        ``metabolite``, ``name``
-            Identity.
-        ``regulated``, ``log2fc``, ``qvalue``
-            Measured change, where data has been mapped.
-        ``role``
-            ``"activator"``, ``"inhibitor"``, ``"both"``,
-            ``"substrate/product only"``, or ``"none"``.
-        ``is_allosteric_regulator``
-            True for the first three.
-        ``n_reactions_activated``, ``n_reactions_inhibited``, ``n_reactions_regulated``, ``n_enzymes_regulated``
-            How much it regulates.
-        ``reactions_activated``, ``reactions_inhibited``
-            Which reactions, as ``;``-separated ids.
-        ``is_substrate``, ``is_product``
-            Whether it also participates in mass flow.
-
-        Empty (with these columns) if the network has no Metabolome layer.
-
-    Notes
-    -----
-    A metabolite with ``role`` of ``"none"`` is in the network but connected to
-    no reaction -- usually a measured compound whose reactions were filtered
-    out, not a biological statement.
-
-    References
-    ----------
-    Kokaji T, et al. Transomics analysis reveals allosteric and gene regulation
-    axes for altered hepatic glucose-responsive metabolism in obesity. *Science
-    Signaling* 13(660):eaaz1236, 2020.
-
-    Examples
-    --------
-    >>> roles = metabolite_regulatory_roles(graph)
-    >>> differential = roles[roles["regulated"] != 0]
-    >>> differential["is_allosteric_regulator"].sum()
+        One row per metabolite: ``metabolite``, ``name``; the measured
+        ``regulated``, ``log2fc``, ``qvalue``; ``role`` (``"activator"``,
+        ``"inhibitor"``, ``"both"``, ``"substrate/product only"`` or ``"none"``);
+        ``is_allosteric_regulator``; the number and ids of the reactions it
+        activates and inhibits; ``n_enzymes_regulated``; and ``is_substrate``,
+        ``is_product``.
     """
     columns = [
         "metabolite", "name", "regulated", "log2fc", "qvalue",
@@ -734,47 +639,26 @@ def regulatory_role_enrichment(
     roles: pd.DataFrame,
     background: Optional[Sequence[str]] = None,
 ) -> Dict[str, object]:
-    """Are the differential metabolites enriched for regulatory roles?
+    """Test whether changed metabolites are regulators more often than expected.
 
-    Answers the question directly: *of the metabolites that changed, how many
-    have a regulatory function?* -- and then whether that share is higher than
-    expected among all measured metabolites.
-
-    The test is Fisher's exact on a 2x2 of differential (yes/no) against
-    regulator (yes/no), run once overall and once per role. An enrichment says
-    the response is concentrated in metabolites that act back on enzymes, which
-    is a mechanistic claim; a depletion says the changed metabolites are mostly
-    passengers.
+    Fisher's exact test of changed (yes/no) against regulator (yes/no), overall
+    and per role, with Benjamini-Hochberg correction.
 
     Parameters
     ----------
     roles : pandas.DataFrame
         Output of :func:`metabolite_regulatory_roles`.
     background : sequence of str, optional
-        Metabolites to treat as the measured background. Defaults to every
-        metabolite in ``roles`` that carries a measurement -- which is the right
-        background, since unmeasured compounds could never have been called
-        differential.
+        The measured metabolites to compare against. Default: every metabolite
+        in ``roles`` with a measurement.
 
     Returns
     -------
     dict
-        ``counts`` : dict
-            ``n_background``, ``n_differential``, ``n_differential_regulators``,
-            ``fraction_differential_regulators``, and the same for the
-            background. The first three answer the question on their own.
-        ``enrichment`` : pandas.DataFrame
-            Per role (``any``, ``activator``, ``inhibitor``): the 2x2 counts,
-            odds ratio, p-value and BH-adjusted q-value.
-        ``regulators`` : pandas.DataFrame
-            The differential metabolites that are regulators, with what they
-            regulate -- the shortlist worth following up.
-
-    Examples
-    --------
-    >>> roles = metabolite_regulatory_roles(graph)
-    >>> result = regulatory_role_enrichment(roles)
-    >>> result["counts"]["n_differential_regulators"]
+        ``counts``: numbers of background, changed, and changed-and-regulator
+        metabolites, with the fractions. ``enrichment``: one row per role
+        (``any``, ``activator``, ``inhibitor``) with odds ratio, p- and q-value.
+        ``regulators``: the changed metabolites that are regulators.
     """
     empty_enrichment = pd.DataFrame(columns=[
         "role", "n_differential_with_role", "n_differential_without_role",

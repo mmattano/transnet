@@ -1,30 +1,10 @@
-"""Temporal and dose structure on the trans-omic network.
+"""Response timing and dose sensitivity on the network.
 
-Time-course and dose-response data give every molecule two numbers -- how fast
-it responds (t-half) and how sensitive it is (EC50).  Putting those on network
-nodes turns them into statements about network architecture:
-
-* do highly connected molecules respond *first*?  Morita et al. found a negative
-  correlation between degree and t-half in healthy liver, meaning hubs lead the
-  response, and found that correlation destroyed in obese liver even though the
-  network's structure was unchanged -- structural robustness with temporal
-  vulnerability;
-* are neighbouring molecules co-regulated?  A bimodal distribution of neighbour
-  correlations (peaks near +/-0.75) says the network is coherently driven; a
-  unimodal distribution near zero says it is not;
-* which subnetwork carries the fast, sensitive response?  Kawata et al. split
-  the insulin trans-omic network by EC50 and t-half into selective subnetworks
-  for induced versus basal insulin.
-
-References
-----------
-Morita K, et al. Structural robustness and temporal vulnerability of the
-starvation-responsive metabolic network in healthy and obese mouse liver.
-*Science Signaling* 18, 2025.
-
-Kawata K, et al. Trans-omic Analysis Reveals Selective Responses to Induced and
-Basal Insulin across Signaling, Transcriptional, and Metabolic Networks.
-*iScience* 7:212-229, 2018.
+A time course gives each molecule a half-response time (t-half), and a
+dose-response series a half-maximal dose (EC50). With these on the nodes one
+can ask whether well-connected molecules respond first, whether connected
+molecules move together, and which part of the network carries the fast or
+sensitive response.
 """
 
 from typing import Dict, Optional, Sequence
@@ -376,24 +356,18 @@ def split_by_response_class(
 ) -> Dict[str, object]:
     """Split the network into fast/slow and sensitive/insensitive subnetworks.
 
-    Thresholds default to the median of each parameter across the nodes that
-    have it, which is the data-driven split used when no external cutoff
-    applies.
-
     Parameters
     ----------
     graph : networkx.Graph
+        A network with ``t_half`` and/or ``ec50`` on its nodes.
     t_half_threshold, ec50_threshold : float, optional
+        Cut-offs. Default: the median over the nodes that have the value.
 
     Returns
     -------
     dict
-        ``thresholds`` : dict
-            The cutoffs actually used.
-        ``classes`` : pandas.DataFrame
-            Per node: its t-half, EC50 and assigned class.
-        ``subnetworks`` : dict
-            ``{class_name: subgraph}`` for each populated class.
+        ``thresholds`` (the cut-offs used), ``classes`` (each node's values and
+        class) and ``subnetworks`` (``{class: subgraph}``).
     """
     nodes = [
         n for n, d in graph.nodes(data=True)

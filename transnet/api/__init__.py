@@ -6,7 +6,7 @@ from transnet.api import (
 
 # KEGG: the signalling relations that build the Signaling layer. The rest of the
 # KEGG client is reached through the module, since it is builder machinery.
-from transnet.api.kegg import kegg_signaling_relations
+from transnet.api.kegg import kegg_reaction_pathways, kegg_signaling_relations
 
 # BRENDA
 from transnet.api.brenda import (
@@ -46,6 +46,7 @@ __all__ = [
     # sub-modules
     'kegg', 'uniprot', 'string', 'ensembl', 'chip_atlas', 'chem_info',
     'kegg_signaling_relations',
+    'kegg_reaction_pathways',
     'brenda', 'reactome', 'hmdb',
     # BRENDA
     'BrendaClient',

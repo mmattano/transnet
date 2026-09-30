@@ -1,23 +1,8 @@
-"""Signed regulatory-path tracing through the trans-omic hierarchy.
+"""Signed regulatory paths: predict a molecule's direction and check it.
 
-A trans-omic network claims that a stimulus reaches a metabolite through a
-chain of regulatory steps.  This module enumerates those chains and checks them:
-multiply the signs along a path, compare the result with the metabolite's
-measured direction, and the path either explains the observation or it does not.
-
-The starting layer is inferred from the network unless you name one, so the same
-call works on a network with phosphoproteomics (paths start at ``Signaling``),
-one without (paths start at ``Proteome``), and a transcriptome-only network
-(paths start at ``Transcriptome``).
-
-References
-----------
-Kawata K, et al. Trans-omic Analysis Reveals Selective Responses to Induced and
-Basal Insulin across Signaling, Transcriptional, and Metabolic Networks. *iScience*
-7:212-229, 2018.
-
-Yugi K, et al. Trans-Omics: How To Reconstruct Biochemical Networks Across
-Multiple 'Omic' Layers. *Trends in Biotechnology* 34(4):276-290, 2016.
+The sign of a path is the product of its edge signs. Multiplied by the
+measured direction of the starting molecule, it predicts the direction of the
+end molecule, which is then compared with the measurement.
 """
 
 from typing import Dict, List, Optional, Sequence
@@ -65,91 +50,46 @@ def trace_regulatory_paths(
     exclude_nodes: Optional[Sequence[str]] = None,
     allow_unchanged_intermediates: bool = False,
 ) -> pd.DataFrame:
-    """Enumerate signed regulatory paths and score them against the data.
+    """Trace signed paths between layers and score them against the data.
 
     Parameters
     ----------
     graph : networkx.Graph
-        A trans-omic network, ideally directed.  An undirected graph is
-        accepted but direction cannot be enforced, and the result says so.
+        A trans-omic network, ideally directed, with omics data mapped onto it.
     source_layer : str, optional
-        Layer paths start from.  ``None`` (default) infers the highest layer
-        present in the network -- see
-        :func:`~transnet.biology.schema.top_layer_present`.
+        Layer the paths start from. Default: the highest layer present.
     target_layer : str
-        Layer paths end at.
+        Layer the paths end in.
     sources, targets : sequence of str, optional
-        Explicit endpoint nodes, overriding the layer-based selection.
+        Explicit start and end nodes, instead of whole layers.
     max_length : int
         Maximum number of edges in a path.
     regulated_only : bool
-        Restrict endpoints to nodes called regulated by
-        :func:`~transnet.analysis.transomics.mapping.map_omics_to_network`.
-        Set False to trace structural paths with no data mapped.
+        Start and end only at molecules that changed. False traces paths on the
+        structure alone.
     max_paths : int
-        Stop after this many paths, to bound the search on dense networks.
+        Stop after this many paths.
     exclude_edge_types : sequence of str, optional
-        Relationships to walk around.  Defaults to ``("protein_interaction",)``:
-        a STRING association is undirected and unsigned, so it is not a
-        regulatory step, and on a real proteome its tens of thousands of edges
-        connect almost any protein to almost any other -- which both explodes
-        the search and makes the paths meaningless.  Pass an empty sequence to
-        keep every edge.
+        Edge types to skip. Default ``("protein_interaction",)``, which has
+        neither direction nor sign. Pass ``()`` to keep every edge.
     exclude_nodes : sequence of str, optional
-        Molecules to route around.  Defaults to
-        :data:`transnet.biology.schema.CURRENCY_METABOLITES`: a path that hops
-        through water or ATP connects two reactions that have nothing to do
-        with each other, and with cofactors in the graph almost every reaction
-        reaches almost every other.  Pass an empty sequence to keep them.
-
-        Note that excluded molecules cannot be path *endpoints* either; name
-        one explicitly in ``sources`` or ``targets`` and it is kept.
+        Molecules to route around. Default: the currency metabolites (ATP,
+        water, NAD and similar), which connect almost every reaction to every
+        other. Excluded molecules can still be named in ``sources`` or
+        ``targets``. Pass ``()`` to keep them.
     allow_unchanged_intermediates : bool
-        Keep paths that run through a molecule which *was measured and did not
-        change*.  Such a path is contradicted by the data it is scored
-        against: if the intermediate did not move, it passed nothing on, so
-        counting the path as an explanation of the endpoint inflates the
-        consistency rate.  Off by default; the count that was dropped is
-        logged, and the ``unchanged_intermediates`` column reports it per path
-        when this is switched on.  Unmeasured intermediates are kept either
-        way -- an unmeasured molecule is unknown, not unchanged.
+        Keep paths through molecules that were measured and did not change.
+        Off by default, because the data contradict such paths. Unmeasured
+        intermediates are always kept.
 
     Returns
     -------
     pandas.DataFrame
-        One row per path:
-
-        ``source``, ``target``, ``path``, ``length``
-            The chain itself.
-        ``layers``, ``edge_types``
-            Which layers and relationships it crosses.
-        ``sign``
-            Product of the edge signs: whether the path passes a change on
-            unchanged (+1) or inverted (-1).
-        ``unsigned_steps``
-            Number of steps whose sign is unknown (e.g. ChIP-Atlas binding).
-            A path with unsigned steps predicts a direction only tentatively.
-        ``unchanged_intermediates``
-            Molecules on the path that were measured and did not change. Always
-            0 unless ``allow_unchanged_intermediates``.
-        ``source_regulated``
-            Measured direction of the source.
-        ``predicted``
-            ``sign * source_regulated``: the direction the path predicts for
-            the target. A *decreased* enzyme on a +1 path predicts a decrease.
-        ``observed``
-            Measured direction of the target.
-        ``consistent``
-            Whether ``predicted`` matches ``observed``. (This used to compare
-            ``sign`` with ``observed``, ignoring the source's direction, which
-            inverted the verdict for every path from a decreased molecule.)
-
-        Empty (with these columns) when either endpoint layer is absent.
-
-    Notes
-    -----
-    The inferred hierarchy is logged, so a run on a network without a Signaling
-    layer states plainly that paths begin at the next layer down.
+        One row per path: ``source``, ``target``, ``path``, ``length``,
+        ``layers``, ``edge_types``; ``sign`` (product of the edge signs);
+        ``unsigned_steps`` (edges with unknown sign); ``unchanged_intermediates``;
+        ``source_regulated``; ``predicted`` (``sign * source_regulated``);
+        ``observed``; and ``consistent`` (``predicted == observed``).
     """
     columns = [
         "source", "target", "path", "length", "layers", "edge_types",
@@ -367,7 +307,10 @@ def trace_regulatory_paths(
 
 
 def path_consistency_summary(paths: pd.DataFrame) -> pd.DataFrame:
-    """Summarise traced paths by target molecule.
+    """One verdict per target molecule from a set of traced paths.
+
+    Paths that share most of their steps are not independent, so consistency
+    should be counted per molecule, not per path.
 
     Parameters
     ----------
@@ -377,19 +320,10 @@ def path_consistency_summary(paths: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pandas.DataFrame
-        Per target: how many paths reach it, how many are fully signed, how many
-        are consistent with its measured direction, and the shortest consistent
-        path -- the most parsimonious explanation the network offers.
-
-        ``predicted`` is what the network says about this molecule once its
-        paths are taken together: the direction most of them predict, or 0 when
-        they are evenly split. ``agrees`` compares that with the measurement.
-
-        These two columns are how a consistency rate should be quoted. Paths
-        are not independent observations -- one hub metabolite can be reached
-        by dozens of paths sharing most of their steps -- so a rate over paths
-        counts the same claim many times, while a rate over targets counts each
-        molecule once.
+        One row per target: the number of paths, fully signed paths and
+        consistent paths; ``predicted``, the direction most paths predict (0 if
+        they are split); ``agrees``, whether it matches the measurement; and the
+        shortest consistent path.
     """
     columns = [
         "target", "observed", "n_paths", "n_fully_signed",

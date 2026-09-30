@@ -66,16 +66,16 @@ def path_verdicts(paths):
 
 
 def hub_rankings(graph, top_percent: float = 2.0):
-    """Trans-omic hubs two ways, and how much ChIP-Atlas drives the first.
+    """Rank hubs with and without transcription-factor binding edges.
 
-    Hubs are ranked by degree within the responsive network (Morita et al.).
-    ChIP-Atlas lists thousands of targets for any protein that has been
-    ChIP-sequenced, chromatin factors included, so the top of that ranking is
-    often decided by binding breadth. The second ranking drops
-    ``transcriptional_regulation`` edges to show the hubs of the metabolic and
-    protein relationships underneath. Both are reported; neither is hidden.
+    ChIP-Atlas lists thousands of targets for well-studied factors, so they can
+    dominate a hub ranking. The second ranking leaves out
+    ``transcriptional_regulation`` edges.
 
-    Returns ``(hubs, hubs_without_binding, top_hub_binding_share)``.
+    Returns
+    -------
+    tuple
+        ``(hubs, hubs_without_binding, top_hub_binding_share)``.
     """
     from transnet import responsive_subnetwork, transomic_hubs
 

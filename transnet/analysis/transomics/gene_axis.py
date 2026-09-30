@@ -1,39 +1,9 @@
-"""The gene-expression axis: which regulators drive it, and where it breaks.
+"""The top of the hierarchy: transcription factors, genes and proteins.
 
-Two analyses that read the top of the trans-omic hierarchy -- transcription
-factor to gene, and gene to protein -- rather than the reaction layer.
-
-* :func:`transcription_factor_activity` (transcription-factor activity) infers which transcription
-  factors drive the responsive genes, and in which direction, from the
-  consistency of their targets. Binding data (ChIP-Atlas) say a factor *can*
-  regulate a gene but not whether it activates or represses it, so the
-  ``transcriptional_regulation`` edges carry no sign. What the targets did
-  under the perturbation supplies it.
-* :func:`expression_concordance` (transcript-protein concordance) compares each gene with the
-  protein it encodes. A protein that changes while its transcript does not is
-  regulated after transcription -- translation, degradation, secretion -- and
-  that is invisible to any analysis of one layer at a time.
-
-References
-----------
-Kokaji T, et al. In vivo transomic analyses of glucose-responsive metabolism in
-skeletal muscle reveal core differences between the healthy and obese states.
-*Scientific Reports* 12:13719, 2022. (Differentially regulated transcription
-factors inferred from responsive genes.)
-
-Kokaji T, et al. Transomics analysis reveals allosteric and gene regulation axes
-for altered hepatic glucose-responsive metabolism in obesity. *Science
-Signaling* 13(660):eaaz1236, 2020.
-
-Maehara H, et al. Transomic analysis reveals DNA methylation and
-transcription factor roles in obese liver protein expression. *npj Systems
-Biology and Applications* 11:130, 2025. (Transcription factor targets from ChIP-Atlas.)
-
-Liu Y, Beyer A, Aebersold R. On the dependency of cellular protein levels on
-mRNA abundance. *Cell* 165(3):535-550, 2016.
-
-Egami R, et al. *iScience* 24(3):102217, 2021. (Concordance of differentially
-expressed proteins and genes in obese liver and muscle.)
+* :func:`transcription_factor_activity` infers which transcription factors
+  drove the genes that changed, and in which direction.
+* :func:`expression_concordance` compares each gene with the protein it
+  encodes, to separate transcriptional from post-transcriptional changes.
 """
 
 import logging
@@ -71,52 +41,31 @@ def transcription_factor_activity(
     min_targets: int = 5,
     min_confidence: Optional[float] = None,
 ) -> pd.DataFrame:
-    """Infer which transcription factors drive the responsive genes (transcription-factor activity).
+    """Infer which transcription factors drove the genes that changed.
 
-    For every factor with ``transcriptional_regulation`` edges, two questions
-    are asked of its *measured* target genes:
-
-    1. **Is the factor implicated?** Its targets are tested for enrichment
-       among the responsive genes (one-sided Fisher's exact test against all
-       measured genes, Benjamini-Hochberg across factors).
-    2. **In which direction?** If the factor's responsive targets move mostly
-       one way, that is its inferred activity: mostly up suggests an activated
-       activator (or a relieved repressor), mostly down the opposite. A
-       two-sided binomial test says whether the imbalance exceeds chance.
-
-    Whether the factor itself changed is reported alongside
-    (``factor_regulated``). A factor whose activity is inferred but whose own
-    level did not change is regulated post-translationally -- by
-    phosphorylation, ligand binding or localisation -- which is the usual case
-    and exactly what an expression-only view of transcription factors misses.
+    For each factor, its measured target genes are tested for enrichment among
+    the changed genes (one-sided Fisher's exact test, Benjamini-Hochberg across
+    factors). If the changed targets moved mostly one way, that is the factor's
+    inferred activity (binomial test). The factor's own measured change is
+    reported beside it: a factor inferred active whose level did not change is
+    usually controlled by modification, ligand binding or location.
 
     Parameters
     ----------
     graph : networkx.MultiDiGraph
-        A mapped trans-omic network. Transcription factors are the sources of
-        ``transcriptional_regulation`` edges (Proteome nodes); targets are
-        Transcriptome nodes.
+        A mapped trans-omic network with ``transcriptional_regulation`` edges.
     min_targets : int
-        Factors with fewer measured targets are skipped: too few to test.
+        Skip factors with fewer measured targets than this.
     min_confidence : float, optional
-        Ignore edges whose ``confidence`` (the ChIP-Atlas binding score) is
-        below this, for a stricter definition of a target than the network
-        was built with.
+        Ignore target edges with a ChIP-Atlas binding score below this.
 
     Returns
     -------
     pandas.DataFrame
-        One row per tested factor, most significant first: ``factor``,
-        ``name``, ``n_targets``, ``n_responsive_targets``, ``n_up``,
-        ``n_down``, ``odds_ratio``, ``p_value``, ``q_value``,
-        ``direction_p_value``, ``inferred_activity`` (+1, -1 or 0) and
-        ``factor_regulated`` (the factor's own measured direction, or
-        ``None`` if it was not measured). Empty when the network has no
-        transcriptional regulation edges or no measured genes.
-
-    References
-    ----------
-    Kokaji T, et al. *Scientific Reports* 12:13719, 2022.
+        One row per tested factor, most significant first: ``factor``, ``name``,
+        ``n_targets``, ``n_responsive_targets``, ``n_up``, ``n_down``,
+        ``odds_ratio``, ``p_value``, ``q_value``, ``direction_p_value``,
+        ``inferred_activity`` (+1, -1 or 0) and ``factor_regulated``.
     """
     columns = [
         "factor", "name", "n_targets", "n_responsive_targets", "n_up", "n_down",
@@ -221,70 +170,34 @@ def transcription_factor_activity(
 
 
 def expression_concordance(graph, alpha: float = 0.05) -> dict:
-    """Compare each measured gene with the protein it encodes (transcript-protein concordance).
+    """Compare each measured gene with the protein it encodes.
 
-    Every ``translation`` edge whose gene and protein were both measured is
-    classified:
+    Each gene-protein pair measured in both layers is classified as
+    ``concordant`` (both changed the same way), ``protein_only``,
+    ``transcript_only``, ``discordant`` (opposite directions) or ``unchanged``.
 
-    ``concordant``
-        Both changed, in the same direction -- transcriptional control carried
-        through to protein.
-    ``protein_only``
-        The protein changed and its transcript did not: post-transcriptional
-        regulation (translation, degradation, secretion).
-    ``transcript_only``
-        The transcript changed and the protein did not: buffered, delayed, or
-        the protein assay missed it.
-    ``discordant``
-        Both changed, in opposite directions.
-    ``unchanged``
-        Neither changed.
-
-    mRNA explains only part of protein variation (Liu, Beyer and Aebersold
-    2016), so a large ``protein_only`` class is expected biology, not noise --
-    and it is the class that a transcriptome-only study attributes to nothing.
-
-    **The categories depend on each layer's statistical power.** With a
-    transcriptome test that detects few changes, almost every changed protein
-    lands in ``protein_only`` whatever the biology. When both nodes carry a
-    standard error (``se``, from ``map_omics_to_network(..., se_column=)``),
-    each pair is also tested directly: is the protein change larger than the
-    transcript change? ``z = (protein - transcript) / sqrt(se_p^2 + se_t^2)``,
-    Benjamini-Hochberg across pairs. The standard errors are treated as
-    independent, which is conservative when both layers come from the same
-    animals and co-vary positively. The test compares fold-change
-    *magnitudes* across platforms, so it assumes they are on comparable
-    scales; ratio compression in isobaric proteomics shrinks protein fold
-    changes, which makes a positive call conservative there. ``protein_beyond_transcript`` marks pairs
-    where the protein moved significantly further, in its own direction --
-    evidence of post-transcriptional regulation that does not rest on the
-    transcript failing a threshold.
+    These categories depend on each layer's statistical power. When standard
+    errors are mapped, each pair is also tested directly for whether the protein
+    changed more than its transcript, ``z = (protein - transcript) /
+    sqrt(se_p^2 + se_t^2)`` with Benjamini-Hochberg correction; pairs where it did
+    are marked ``protein_beyond_transcript``. The test assumes both platforms
+    report fold changes on comparable scales.
 
     Parameters
     ----------
     graph : networkx.MultiDiGraph
         A mapped trans-omic network with ``translation`` edges.
+    alpha : float
+        False discovery rate for the direct test.
 
     Returns
     -------
     dict
-        ``table`` : pandas.DataFrame
-            One row per gene-protein pair: ``gene``, ``protein``, ``name``,
-            ``gene_log2fc``, ``protein_log2fc``, ``gene_regulated``,
-            ``protein_regulated``, ``category``. Categories use the same
-            differential calls as every other analysis, so a protein-only pair
-            may have a transcript that moved below the threshold; the fold
-            changes are included so that can be seen.
-        ``counts`` : dict
-            Pairs per category, plus ``tested_difference`` and
-            ``protein_beyond_transcript`` when standard errors are present.
-        ``correlation`` : float
-            Spearman correlation of gene and protein fold changes across all
-            measured pairs, NaN with fewer than three.
-
-    References
-    ----------
-    Liu Y, Beyer A, Aebersold R. *Cell* 165(3):535-550, 2016.
+        ``table``: one row per pair, with both fold changes, both calls, the
+        category and, when tested, the difference and its q-value.
+        ``counts``: pairs per category, plus ``tested_difference`` and
+        ``protein_beyond_transcript``. ``correlation``: Spearman correlation of
+        the gene and protein fold changes.
     """
     rows = []
     for gene, protein, data in graph.edges(data=True):

@@ -16,6 +16,7 @@ __all__ = [
     "kegg_to_chebi",
     "chebi_to_kegg",
     "kegg_signaling_relations",
+    "kegg_reaction_pathways",
 ]
 
 import pandas as pd
@@ -733,3 +734,78 @@ def kegg_signaling_relations(organism, pathway_ids=None, max_pathways=None):
         f"{len(pathway_ids)} KEGG pathways"
     )
     return relations
+
+
+#: KEGG's global and overview maps (map011xx, map012xx) contain most of
+#: metabolism, so a reaction's membership in them says nothing about which
+#: pathway it belongs to.
+_OVERVIEW_MAP_PREFIXES = ("map011", "map012")
+
+
+def kegg_reaction_pathways(reactions=None, organism: str = None,
+                           exclude_overview: bool = True, cache: bool = True):
+    """KEGG pathways each reaction belongs to.
+
+    The result is the ``pathway_map`` that
+    :func:`~transnet.regulation_axis_summary` needs for a per-pathway summary.
+    A reaction usually sits in several pathways and is listed under each.
+
+    Parameters
+    ----------
+    reactions : iterable of str, optional
+        Reaction ids (``R00200``) to keep. Default: all KEGG reactions.
+    organism : str, optional
+        KEGG organism code (``"mmu"``). Keeps only pathways that exist in that
+        organism, which removes, for example, antibiotic biosynthesis from a
+        mouse analysis.
+    exclude_overview : bool
+        Leave out the global and overview maps such as "Metabolic pathways".
+    cache : bool
+        Store the KEGG answer in ``~/.cache/transnet/kegg`` and reuse it.
+
+    Returns
+    -------
+    dict
+        ``{reaction_id: [pathway name, ...]}``.
+    """
+    import io
+    import os
+    from pathlib import Path
+
+    folder = Path(os.environ.get("TRANSNET_KEGG_CACHE",
+                                 Path.home() / ".cache" / "transnet" / "kegg"))
+    links_file, names_file = folder / "link_pathway_reaction.tsv", folder / "list_pathway.tsv"
+
+    def fetch(url, path):
+        if cache and path.exists():
+            return path.read_text()
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        if cache:
+            folder.mkdir(parents=True, exist_ok=True)
+            path.write_text(response.text)
+        return response.text
+
+    links = pd.read_table(io.StringIO(fetch("https://rest.kegg.jp/link/pathway/reaction",
+                                            links_file)),
+                          header=None, names=["reaction", "pathway"])
+    names = pd.read_table(io.StringIO(fetch("https://rest.kegg.jp/list/pathway", names_file)),
+                          header=None, names=["pathway", "name"])
+    links["reaction"] = links["reaction"].str.replace("rn:", "", regex=False)
+    links["pathway"] = links["pathway"].str.replace("path:", "", regex=False)
+    links = links[links["pathway"].str.startswith("map")]
+    if exclude_overview:
+        links = links[~links["pathway"].str.startswith(_OVERVIEW_MAP_PREFIXES)]
+    if reactions is not None:
+        links = links[links["reaction"].isin(set(reactions))]
+    if organism:
+        present = pd.read_table(
+            io.StringIO(fetch(f"https://rest.kegg.jp/list/pathway/{organism}",
+                              folder / f"list_pathway_{organism}.tsv")),
+            header=None, names=["pathway", "name"])
+        kept = {"map" + str(p)[len(organism):] for p in present["pathway"]}
+        links = links[links["pathway"].isin(kept)]
+    links = links.copy()
+    links["name"] = links["pathway"].map(dict(zip(names["pathway"], names["name"])))
+    links["name"] = links["name"].fillna(links["pathway"])
+    return links.groupby("reaction")["name"].apply(sorted).to_dict()

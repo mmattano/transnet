@@ -1,29 +1,9 @@
 """Layer-aware topology: cross-layer connectivity and trans-omic hubs.
 
-Two measurements that only mean something on a multi-layer network:
-
-* **cross-layer connectivity** -- how much of the network actually crosses
-  between omic layers, and how well each layer is covered by measurement.  A
-  network that is 95% within-layer edges is a set of stacked single-omics
-  networks, not a trans-omic one, and this is how you find that out.
-* **trans-omic hubs** -- molecules that are hubs *across* layers.  Morita et al.
-  found ATP and AMP dominating the starvation-responsive liver network at
-  degrees above 200, coordinating reactions throughout metabolism; a
-  within-layer degree ranking would never surface them as such.
-
-References
-----------
-Morita K, et al. Structural robustness and temporal vulnerability of the
-starvation-responsive metabolic network in healthy and obese mouse liver.
-*Science Signaling* 18, 2025.
-
-De Domenico M, Sole-Ribalta A, Omodei E, Gomez S, Arenas A. Ranking in
-interconnected multilayer networks reveals versatile nodes. *Nature
-Communications* 6:6868, 2015.
-
-Sugimoto H, Morita K, Li D, et al. iTraNet: a web-based platform for integrated
-trans-omics network visualization and analysis. *Bioinformatics Advances*
-4(1):vbae141, 2024.
+* :func:`cross_layer_connectivity` measures how much of the network connects
+  different layers, and how well each layer is covered by data.
+* :func:`transomic_hubs` ranks molecules by their connections to other
+  layers, rather than by their total number of connections.
 """
 
 from typing import Dict, List, Optional, Sequence
@@ -46,7 +26,7 @@ __all__ = [
 
 
 def cross_layer_connectivity(graph) -> Dict[str, object]:
-    """Measure how much of the network crosses between omic layers.
+    """Measure how much of the network connects different layers.
 
     Parameters
     ----------
@@ -55,16 +35,10 @@ def cross_layer_connectivity(graph) -> Dict[str, object]:
     Returns
     -------
     dict
-        ``matrix`` : pandas.DataFrame
-            Layer x layer edge counts, source layer on rows.
-        ``edge_types`` : pandas.DataFrame
-            Count of each relationship, with the layers it connects.
-        ``coverage`` : pandas.DataFrame
-            Per layer: node count, how many carry measured data, and how many
-            are differentially regulated.
-        ``cross_layer_fraction`` : float
-            Share of edges that connect two different layers.  The headline
-            number: this is what makes the network trans-omic.
+        ``matrix``: layer-by-layer edge counts, source layer in rows.
+        ``edge_types``: count of each edge type and the layers it connects.
+        ``coverage``: per layer, nodes, measured nodes and changed nodes.
+        ``cross_layer_fraction``: share of edges between two different layers.
     """
     layers = available_layers(graph)
     matrix = pd.DataFrame(0, index=layers, columns=layers, dtype=int)
@@ -153,37 +127,30 @@ def transomic_hubs(
     responsive_only: bool = True,
     layers: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
-    """Rank molecules by how much they connect *across* layers.
+    """Rank molecules by how much they connect across layers.
 
-    Follows Morita et al., who define hubs as the top 2% by degree among the
-    nodes that responded to the perturbation, then reads off which of those
-    coordinate multiple metabolic pathways.  Alongside plain degree this
-    reports two multi-layer quantities:
-
-    * ``n_layers_touched`` -- how many distinct layers a node's neighbours span;
-    * ``versatility`` -- the node's share of total degree, weighted by the
-      number of layers it reaches, in the spirit of De Domenico's multilayer
-      versatility.  A node with 50 neighbours in one layer scores below a node
-      with 50 neighbours spread across four.
+    Hubs are the top ``top_percent`` by degree among the molecules that changed.
+    Two further columns describe their reach: ``n_layers_touched``, the number
+    of layers among their neighbours, and ``versatility``, their share of all
+    edges weighted by that number.
 
     Parameters
     ----------
     graph : networkx.Graph
     top_percent : float
-        Degree percentile defining a hub, as a percentage.
+        Degree percentile that defines a hub.
     responsive_only : bool
-        Rank only among differentially regulated nodes (default), matching the
-        published definition.  Falls back to all nodes, with a log message,
-        when no data has been mapped.
+        Rank only the molecules that changed (default). Falls back to all
+        molecules when no data is mapped.
     layers : sequence of str, optional
         Restrict the ranking to these layers.
 
     Returns
     -------
     pandas.DataFrame
-        Columns ``node``, ``layer``, ``name``, ``degree``, ``cross_layer_degree``,
-        ``n_layers_touched``, ``layers_touched``, ``versatility``, ``regulated``,
-        ``is_hub``, sorted with the strongest hubs first.
+        ``node``, ``layer``, ``name``, ``symbol``, ``degree``,
+        ``cross_layer_degree``, ``n_layers_touched``, ``layers_touched``,
+        ``versatility``, ``regulated`` and ``is_hub``, strongest hubs first.
     """
     wanted = set(layers) if layers is not None else set(available_layers(graph))
     candidates = [
@@ -202,7 +169,7 @@ def transomic_hubs(
 
     if not candidates:
         return pd.DataFrame(columns=[
-            "node", "layer", "name", "degree", "cross_layer_degree",
+            "node", "layer", "name", "symbol", "degree", "cross_layer_degree",
             "n_layers_touched", "layers_touched", "versatility",
             "regulated", "is_hub",
         ])
@@ -224,6 +191,7 @@ def transomic_hubs(
             "node": node,
             "layer": own_layer,
             "name": graph.nodes[node].get("name"),
+            "symbol": graph.nodes[node].get("symbol"),
             "degree": len(neighbours),
             "cross_layer_degree": cross_layer_degree,
             "n_layers_touched": len(neighbour_layers),
@@ -255,7 +223,7 @@ def transomic_hubs(
         f"{len(table)} candidates); highest degree {int(table['degree'].max())}"
     )
     return table[[
-        "node", "layer", "name", "degree", "cross_layer_degree",
+        "node", "layer", "name", "symbol", "degree", "cross_layer_degree",
         "n_layers_touched", "layers_touched", "versatility",
         "regulated", "is_hub",
     ]]

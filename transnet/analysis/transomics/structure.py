@@ -1,29 +1,11 @@
-"""Structure of the trans-omic network: motifs, bottlenecks, and a null model.
+"""The structure of the responsive network: motifs, weak points, a null model.
 
-The analyses in the rest of this package read *data* through the network. These
-read the network itself, and they are the ones that cannot be done on a list of
-molecules at all:
-
-* :func:`regulatory_motifs` finds the sign-aware wiring patterns that carry
-  behaviour -- product inhibition, allosteric feedback, feed-forward control --
-  by looking for them, rather than by assuming a pathway diagram.
-* :func:`structural_vulnerability` asks which molecules hold the response
-  together: remove this one and the response falls into disconnected pieces.
-* :func:`convergence_significance` asks whether the layers converge on shared
-  reactions more than the network's own degree distribution would produce by
-  itself, which is the honest baseline for "the layers meet here".
-
-References
-----------
-Morita K, et al. Structural robustness and temporal vulnerability of the
-starvation-responsive metabolic network in healthy and obese mouse liver.
-*Science Signaling* 18, 2025.
-
-Milo R, et al. Network motifs: simple building blocks of complex networks.
-*Science* 298(5594):824-827, 2002.
-
-Maslov S, Sneppen K. Specificity and stability in topology of protein
-networks. *Science* 296(5569):910-913, 2002. (Degree-preserving rewiring.)
+* :func:`regulatory_motifs` finds signed wiring patterns such as product
+  inhibition.
+* :func:`structural_vulnerability` finds the molecules whose removal would
+  split the response into separate pieces.
+* :func:`convergence_significance` tests whether the layers converge on
+  shared reactions more than chance would produce.
 """
 
 from typing import Dict, List, Optional, Sequence
@@ -68,41 +50,30 @@ def _first(records, predicate):
 
 def regulatory_motifs(graph, responsive_only: bool = False,
                       exclude_currency: bool = True) -> Dict[str, object]:
-    """Find the signed wiring patterns that make a network behave.
+    """Find signed wiring patterns among the molecules.
 
-    Three motifs, each defined by direction and sign rather than by name, so
-    they are found wherever they occur instead of where a pathway map says to
-    look:
-
-    ``product_inhibition``
-        An enzyme makes a metabolite that inhibits the same reaction. The
-        textbook negative feedback, and the reason a reaction can slow down
-        while its enzyme rises -- which is exactly the "controversial" case
-        the regulation axes flag.
+    ``product_inhibition`` / ``product_activation``
+        A reaction regulated by its own product.
     ``allosteric_feedback``
-        A metabolite made by one reaction regulates *another* reaction that
-        feeds it: feedback at pathway range rather than at one step.
+        A metabolite made by one reaction regulates another reaction that
+        feeds it.
     ``feed_forward``
-        A transcription factor regulates a gene whose protein catalyses a
-        reaction the factor's own targets also feed -- control applied twice,
-        on different timescales.
+        A transcription factor controls two enzymes of the same reaction.
 
     Parameters
     ----------
     graph : networkx.MultiDiGraph
     responsive_only : bool
-        Restrict to molecules that changed, which turns a census of the
-        network into a census of *this* response.
+        Consider only molecules that changed (and factors that changed).
     exclude_currency : bool
-        Skip ATP, NAD(H), water and the like, which take part in everything
-        and would make every reaction look like feedback.
+        Skip currency metabolites such as ATP and water.
 
     Returns
     -------
     dict
-        ``motifs`` : one row per instance, with the molecules, the signs and
-        the sign product -- negative means the loop opposes its own input.
-        ``counts`` : instances per motif type.
+        ``motifs``: one row per instance, with the molecules, signs and sign
+        product (negative means the loop opposes its input). ``counts``:
+        instances per motif type.
     """
     currency = set(CURRENCY_METABOLITES) if exclude_currency else set()
     responsive = None
@@ -205,23 +176,25 @@ def _transcription_targets(graph, keep) -> Dict[str, List[str]]:
 
 def structural_vulnerability(graph, responsive_only: bool = True,
                              top_n: int = 25) -> pd.DataFrame:
-    """Which molecules hold the response together?
+    """Find the molecules whose removal splits the responsive network.
 
-    A cut vertex is a molecule whose removal splits its component in two. In a
-    trans-omic network these are the places where one layer's response reaches
-    another through a single route: lose the measurement, or inhibit the
-    enzyme, and the rest of the response is no longer connected to it.
+    These cut molecules are the single routes by which the response in one part
+    of the network reaches another.
 
-    This is the structural half of Morita *et al.*'s robustness analysis. The
-    ``fragments`` column says how many pieces the component falls into, and
-    ``largest_loss`` how much of it is stranded -- a cut vertex that strands
-    two molecules matters less than one that strands a third of the response.
+    Parameters
+    ----------
+    graph : networkx.Graph
+    responsive_only : bool
+        Analyse the responsive subnetwork (default).
+    top_n : int, optional
+        Return only the most damaging molecules.
 
     Returns
     -------
     pandas.DataFrame
         One row per cut molecule, most damaging first: ``node``, ``name``,
-        ``layer``, ``fragments``, ``largest_loss``, ``cross_layer_degree``.
+        ``layer``, ``fragments`` (pieces left after removal), ``largest_loss``
+        (share of the response cut off) and ``cross_layer_degree``.
     """
     scope = graph
     if responsive_only:
@@ -264,20 +237,25 @@ def structural_vulnerability(graph, responsive_only: bool = True,
 
 def convergence_significance(graph, n_randomisations: int = 100,
                              random_state: int = 0) -> Dict[str, object]:
-    """Do the layers converge on shared reactions more than chance?
+    """Test whether changed enzymes and metabolites meet more than chance.
 
-    "This reaction has a changed enzyme *and* a changed metabolite" is the
-    claim the whole catalogue rests on, and it needs a null: a network with
-    this many changed molecules and this degree distribution produces some
-    convergence for free. The null here keeps every node's degree and every
-    edge's type, and rewires which *changed* molecules sit where, by shuffling
-    the responsive labels within each layer.
+    Counts the reactions with both a changed enzyme and a changed metabolite,
+    then repeats the count after reassigning at random which molecules changed,
+    keeping the network and the number of changed molecules per layer fixed.
+
+    Parameters
+    ----------
+    graph : networkx.MultiDiGraph
+    n_randomisations : int
+        Number of random reassignments.
+    random_state : int, optional
+        Seed for reproducibility.
 
     Returns
     -------
     dict
-        ``observed`` convergent reactions, ``null_mean``, ``z``, ``p_value``,
-        and ``null`` (the sampled counts), so the distribution can be drawn.
+        ``observed``, ``null_mean``, ``z``, ``p_value``, and ``null`` (the
+        random counts, for plotting).
     """
     rng = np.random.default_rng(random_state)
 

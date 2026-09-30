@@ -21,11 +21,6 @@ reactome_over_representation
     Pathway over-representation analysis for a gene list.
 reactome_get_pathway_hierarchy
     Full pathway hierarchy tree for a species.
-
-References
-----------
-https://reactome.org/ContentService/
-https://reactome.org/AnalysisService/
 """
 
 from __future__ import annotations
@@ -191,7 +186,7 @@ def reactome_get_pathway_entities(pathway_id: str) -> pd.DataFrame:
         ``identifier`` / ``databaseName`` are the cross-reference
         (e.g. UniProt / CHEBI) when available.
     """
-    url = f"{_CONTENT_API}/pathway/{pathway_id}/participatingPhysicalEntities"
+    url = f"{_CONTENT_API}/participants/{pathway_id}/participatingPhysicalEntities"
     logger.debug(f"Fetching entities for pathway {pathway_id}")
     try:
         data = _get(url)
@@ -364,9 +359,11 @@ def reactome_get_pathway_hierarchy(species: str = "9606") -> list:
         Nested list matching the Reactome hierarchy JSON structure.
         Each node has ``stId``, ``displayName``, ``children`` (list).
     """
-    species_name = _resolve_species(species)
-    url = f"{_CONTENT_API}/eventsHierarchy/{species_name}"
-    logger.info(f"Fetching Reactome hierarchy for {species_name}")
+    # The hierarchy endpoint answers a taxon id but fails on some species names.
+    taxon = {name: taxid for taxid, name in _NCBI_TO_REACTOME_SPECIES.items()}.get(
+        str(species), str(species))
+    url = f"{_CONTENT_API}/eventsHierarchy/{taxon}"
+    logger.info(f"Fetching Reactome hierarchy for {taxon}")
     try:
         data = _get(url)
         return data if isinstance(data, list) else []

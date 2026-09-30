@@ -8,12 +8,6 @@ else in TransNet should hard-code an edge type or a layer name.
 The taxonomy follows the trans-omic framework of Yugi & Kuroda, in which a
 biochemical network is reconstructed by connecting omic layers through a small
 number of well-defined regulatory relationships.
-
-References
-----------
-Yugi K, Kubota H, Hatano A, Kuroda S. Trans-Omics: How To Reconstruct
-Biochemical Networks Across Multiple 'Omic' Layers. *Trends in Biotechnology*
-34(4):276-290, 2016.
 """
 
 from typing import Dict, Iterable, List, Optional, Set

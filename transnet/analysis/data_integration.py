@@ -27,8 +27,8 @@ def compute_differential_expression(
     """
     Compute differential expression between conditions.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df : pd.DataFrame
         Input dataframe
     control_cols : List[str]
@@ -40,8 +40,8 @@ def compute_differential_expression(
     method : str
         Statistical method ('t-test', 'wilcoxon', or 'fold-change')
         
-    Returns:
-    --------
+    Returns
+    -------
     pd.DataFrame
         Dataframe with differential expression results
     """
@@ -137,8 +137,8 @@ def id_mapping(
     """
     Map IDs from one type to another.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df : pd.DataFrame
         Input dataframe
     id_col : str
@@ -150,8 +150,8 @@ def id_mapping(
     organism : str
         Organism name
         
-    Returns:
-    --------
+    Returns
+    -------
     pd.DataFrame
         Dataframe with mapped IDs
     """

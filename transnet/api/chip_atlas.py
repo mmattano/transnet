@@ -96,10 +96,11 @@ _TARGET_URL = (
 _EXP_COLS = [
     "exp_id",        # SRX/ERX accession
     "genome",        # e.g. mm10, hg38
-    "exp_class",     # Transcription factor, Histone, etc.
+    "exp_class",     # antigen class: TFs and others, Histone, etc.
+    "antigen",       # the factor or mark that was immunoprecipitated
     "cell_class",    # broad cell-type class
     "cell_type",     # specific cell type
-    "cell_subtype",  # cell subtype / tissue detail
+    "cell_description",  # free-text description of the cell type
 ]
 
 
@@ -121,12 +122,34 @@ def _fetch_analysis_list() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def chip_cache_dir():
+    """Directory holding the downloaded ChIP-Atlas experiment list.
+
+    Override with the ``TRANSNET_CHIP_CACHE`` environment variable.
+    """
+    import os
+    from pathlib import Path
+
+    configured = os.environ.get("TRANSNET_CHIP_CACHE")
+    return Path(configured) if configured else Path.home() / ".cache" / "transnet" / "chip_atlas"
+
+
 def _fetch_experiment_list() -> pd.DataFrame:
-    """Download and parse the ChIP-Atlas experiment list."""
-    r = _get_with_retry(_EXPERIMENT_LIST_URL, timeout=120, label="experiment list")
-    r.raise_for_status()
+    """The ChIP-Atlas experiment list, downloaded once (about 200 MB) and cached."""
+    path = chip_cache_dir() / "experimentList.tab"
+    if path.exists():
+        text = path.read_text()
+    else:
+        logger.info("Downloading the ChIP-Atlas experiment list (about 200 MB, once)")
+        r = _get_with_retry(_EXPERIMENT_LIST_URL, timeout=600, label="experiment list")
+        r.raise_for_status()
+        text = r.text
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_suffix(".part")
+        partial.write_text(text)
+        partial.replace(path)            # never leave a half-written cache behind
     rows = []
-    for line in r.text.strip().split("\n"):
+    for line in text.strip().split("\n"):
         parts = line.split("\t")
         row = {}
         for i, col in enumerate(_EXP_COLS):
@@ -333,7 +356,7 @@ def get_ChIP_data(
         available = analysis[analysis["genome"] == genome]["protein"].tolist()
     except Exception as exc:
         logger.error(f"Could not fetch ChIP-Atlas analysis list: {exc}")
-        return pd.DataFrame(), {}
+        return pd.DataFrame(), {}, []
 
     if proteins is not None:
         targets = [p for p in proteins if p in available]
@@ -341,7 +364,7 @@ def get_ChIP_data(
             logger.warning(
                 "None of the requested proteins found in ChIP-Atlas."
             )
-            return pd.DataFrame(), {}
+            return pd.DataFrame(), {}, []
     else:
         targets = available
         logger.warning(

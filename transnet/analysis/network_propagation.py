@@ -1,34 +1,10 @@
-"""Network propagation and factor-enrichment for TransNet.
+"""Diffusion on the network, and a permutation test for connectedness.
 
-This module is the statistical-network bridge — the core unique feature that
-separates TransNet from pure statistical tools (MOFA, DIABLO) and from pure
-network tools (PathwayCommons, etc.).
-
-The key insight: multi-omics integration (NMF/PCA/FA) identifies factors that
-capture variance across omics layers.  Network propagation then asks: which
-network regions do these factors activate?  The result is a score for every
-network node that reflects both its loading in a factor *and* its topological
-proximity to other highly-loaded nodes.
-
-Workflow
---------
-1. Fit ``MultiOmicsIntegrator`` on your omics data.
-2. Build (or load) a ``Transnet`` network.
-3. Call ``network_factor_summary(integrator, network)`` to get per-factor
-   propagated scores and connectivity enrichment p-values.
-
-Functions
----------
 random_walk_with_restart
-    Propagate an initial score vector through a network using RWR.
+    Spread seed scores over the network until they settle.
 network_enrichment_permutation
-    Permutation test: are the top-loading features of a factor significantly
-    more connected in the network than expected by chance?
-propagate_factor_loadings
-    Propagate each factor's loadings through the full network, returning
-    network-wide scores for every node.
-network_factor_summary
-    End-to-end convenience function.
+    Test whether a set of molecules is more connected than random sets of
+    the same size.
 """
 
 from __future__ import annotations
@@ -47,8 +23,6 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "random_walk_with_restart",
     "network_enrichment_permutation",
-    "propagate_factor_loadings",
-    "network_factor_summary",
 ]
 
 
@@ -64,48 +38,32 @@ def random_walk_with_restart(
     tol: float = 1e-8,
     as_ranks: bool = False,
 ) -> Dict[str, float]:
-    """Propagate an initial score vector through a network using RWR.
+    """Spread seed scores over the network by random walk with restart.
 
-    Random Walk with Restart (RWR) is a standard diffusion method in network
-    biology.  Starting from a set of seed nodes with initial scores, it
-    iteratively spreads those scores to neighbours, letting each node "absorb"
-    the influence of its topological context.
-
-    The update rule is::
-
-        F_{t+1} = alpha * W * F_t + (1 - alpha) * F_0
-
-    where ``W`` is the column-normalised adjacency matrix and ``F_0`` is the
-    initial (restart) score vector, until convergence.
+    Iterates ``F = alpha * W * F + (1 - alpha) * F0`` until it converges, where
+    ``W`` is the column-normalised adjacency matrix and ``F0`` the normalised
+    seed scores. Nodes close to many seeds end with high scores. Direction and
+    sign are ignored.
 
     Parameters
     ----------
-    node_scores : Dict[str, float]
-        Seed scores keyed by node ID.  Nodes not in the graph are silently
-        ignored.  Scores are L1-normalised before propagation.
-    graph : nx.Graph
-        The network to propagate through.  Directed graphs are converted to
-        undirected; self-loops are removed.
+    node_scores : dict
+        Seed scores by node id. Nodes not in the graph are ignored.
+    graph : networkx.Graph
+        Directed graphs are treated as undirected.
     alpha : float
-        Restart probability (0 < alpha < 1).  Higher values weight topology
-        more strongly; lower values stay closer to the seed nodes.
+        Probability of continuing the walk rather than restarting (0-1).
     max_iter : int
-        Maximum number of iterations before convergence is declared by force.
+        Maximum number of iterations.
     tol : float
-        L-inf convergence threshold.
+        Convergence threshold.
     as_ranks : bool
-        If True, return rank-normalised scores in [0, 1] instead of raw
-        propagated probabilities.
+        Return scores as ranks scaled to 0-1.
 
     Returns
     -------
-    Dict[str, float]
-        Propagated scores for every node in the graph.
-
-    Notes
-    -----
-    Isolated nodes (no edges) receive only their restart probability and
-    are not influenced by propagation.
+    dict
+        Score for every node in the graph.
     """
     if not (0 < alpha < 1):
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
@@ -175,43 +133,27 @@ def network_enrichment_permutation(
     n_permutations: int = 1000,
     seed: int = 42,
 ) -> Dict:
-    """Test whether a set of features is significantly connected in the network.
+    """Test whether a set of molecules is more connected than random sets.
 
-    Null hypothesis: the observed number of edges among ``top_features`` is no
-    greater than expected for a random same-size node set drawn from the graph.
+    Counts the edges among ``top_features`` and compares with random sets of
+    the same size drawn from the graph.
 
     Parameters
     ----------
-    top_features : List[str]
-        The feature set to test (e.g. top-loading genes/proteins for a factor).
-    graph : nx.Graph
-        The network.  Only nodes present in the graph are used.
+    top_features : list of str
+        The molecules to test.
+    graph : networkx.Graph
     n_permutations : int
-        Number of random permutations for the null distribution.
+        Number of random sets.
     seed : int
-        Random seed for reproducibility.
+        Random seed.
 
     Returns
     -------
-    Dict with keys:
-
-    ``observed_edges`` : int
-        Number of edges in the subgraph induced by *top_features*.
-    ``mean_null_edges`` : float
-        Mean edges in the permuted null sets.
-    ``std_null_edges`` : float
-        Standard deviation of null edges.
-    ``p_value`` : float
-        Empirical one-sided p-value (probability that null ≥ observed).
-    ``connectivity_density`` : float
-        Observed edges / maximum possible edges for the given set size.
-    ``n_features_in_graph`` : int
-        Number of top_features found in the graph.
-
-    Notes
-    -----
-    For very small sets (< 2 nodes in graph), the test is undefined and
-    ``p_value=1.0`` is returned.
+    dict
+        ``observed_edges``, ``mean_null_edges``, ``std_null_edges``,
+        ``p_value`` (one-sided), ``connectivity_density`` and
+        ``n_features_in_graph``.
     """
     G = nx.Graph(graph)
     all_nodes = list(G.nodes())

@@ -1,21 +1,10 @@
 """Multi-omics factors, read through the trans-omic network.
 
-Factor analysis by itself is not trans-omics: it asks which molecules co-vary,
-not how a signal propagates through a biochemical network. It earns a place
-here only because of the three readings at the bottom of this module, which
-put a factor *on the network* and ask whether its strongest features are
-connected, which part of the design it follows, and how much it reconstructs.
-
-Only NMF is implemented, because only NMF is used: its parts-based, additive
-factors are what the coherence test is interpretable on. For PCA, factor
-analysis or CCA, use scikit-learn directly --
-``sklearn.decomposition.PCA(n_components=5).fit_transform(matrix)`` is one
-line, always current, and needs no wrapper here.
-
-References
-----------
-Argelaguet R, et al. MOFA+: a statistical framework for comprehensive
-integration of multi-modal single-cell data. *Genome Biology* 21:111, 2020.
+A factor model finds molecules that vary together across samples. The
+functions here fit NMF factors and then ask of each factor whether it follows
+the study design, whether its layers agree, and whether its strongest
+molecules are connected on the network. For PCA or other decompositions, use
+scikit-learn directly.
 """
 
 from dataclasses import dataclass, field
@@ -69,34 +58,30 @@ def fit_factors(
     random_state: int = 0,
     impute: bool = True,
 ) -> Factorisation:
-    """Fit NMF factors jointly across layers (early fusion).
+    """Fit NMF factors jointly across layers.
 
     Parameters
     ----------
     matrices : dict
-        ``{layer: DataFrame}``, samples x features, sharing an index. Layers
-        are concatenated feature-wise, so every layer contributes to every
-        factor -- which is the point: a factor that loads on transcripts and
-        metabolites together is the one worth taking to the network.
+        ``{layer: samples x features}``, sharing a sample index. Layers are
+        concatenated, so every layer contributes to every factor.
     n_components : int
         Number of factors.
     random_state : int
-        Seed, so a rerun gives the same factors.
+        Seed for reproducibility.
     impute : bool
-        Replace missing values with the feature mean before fitting. NMF has
-        no missing-value handling of its own.
+        Replace missing values with the feature mean before fitting.
 
     Returns
     -------
     Factorisation
+        Holds ``factors_`` (samples x factors) and ``loadings_``
+        (``{layer: features x factors}``).
 
     Notes
     -----
-    Each feature is scaled to [0, 1] before fitting, not clipped at zero. Log
-    ratios and log-CPM are negative for a large share of values (47% of the
-    MoTrPAC proteome); clipping first collapsed all of them onto zero and
-    discarded that half of the signal. The clip after scaling absorbs
-    floating-point error only.
+    Each feature is scaled to [0, 1] before fitting, so negative log ratios
+    are kept rather than clipped to zero.
     """
     if not matrices:
         raise ValueError("no matrices to factorise")
@@ -113,10 +98,12 @@ def fit_factors(
         frame = matrices[layer].loc[samples]
         if impute and frame.isnull().any().any():
             frame = pd.DataFrame(
-                SimpleImputer(strategy="mean").fit_transform(frame),
+                SimpleImputer(strategy="mean").fit_transform(frame.to_numpy()),
                 index=frame.index, columns=frame.columns,
             )
-        values = np.clip(MinMaxScaler().fit_transform(frame), 0.0, 1.0)
+        # arrays, not frames: scikit-learn rejects feature names of mixed type
+        # (a missing gene symbol reads as NaN, a float, among strings)
+        values = np.clip(MinMaxScaler().fit_transform(frame.to_numpy()), 0.0, 1.0)
         scaled[layer] = pd.DataFrame(values, index=frame.index, columns=frame.columns)
 
     joint = pd.concat([scaled[layer] for layer in sorted(scaled)], axis=1)
@@ -151,17 +138,14 @@ def factor_design_association(
 ) -> pd.DataFrame:
     """Test every factor against the study design in one linear model.
 
-    Testing timepoint and sex separately, as one-way ANOVAs, asks the wrong
-    question of a factorial design: a factor that carries a *sex-specific*
-    training response looks like a sex factor with a weak timepoint effect.
-    Here each factor's scores are modelled as ``score ~ term1 * term2``
-    (main effects plus their interaction when two terms are given), with
-    Type II sums of squares so each main effect is adjusted for the other.
+    Each factor's scores are modelled as ``score ~ term1 * term2`` with Type II
+    sums of squares, so a factor carrying, for example, a sex-specific training
+    response is not mistaken for a sex factor.
 
     Parameters
     ----------
     factors : pandas.DataFrame
-        Samples x factors, e.g. ``MultiOmicsIntegrator.factors_``.
+        Samples x factors.
     design : pandas.DataFrame
         Samples x covariates, indexed like ``factors``.
     terms : list of str
@@ -172,10 +156,8 @@ def factor_design_association(
     Returns
     -------
     pandas.DataFrame
-        One row per factor and model term: ``factor``, ``term``, ``df``,
-        ``F``, ``p_value``, ``partial_eta_squared`` (share of the variance not
-        explained by other terms that this term explains) and ``q_value``
-        (Benjamini-Hochberg across every factor and term).
+        One row per factor and term: ``df``, ``F``, ``p_value``,
+        ``partial_eta_squared`` and ``q_value`` (Benjamini-Hochberg over all).
     """
     import statsmodels.formula.api as smf
     from statsmodels.stats.anova import anova_lm
@@ -271,40 +253,30 @@ def factor_network_coherence(
     n_permutations: int = 1000,
     random_state: int = 0,
 ) -> Dict[str, object]:
-    """Do a factor's top features connect *across layers* on the network?
+    """Test whether a factor's top molecules are directly linked on the network.
 
-    A factor built from co-variation alone can mix unrelated genes, proteins
-    and metabolites. If its strongest features also sit on connected parts of
-    the trans-omic network -- a gene and the protein it encodes, a factor and
-    its target gene, an enzyme and a metabolite of the reaction it catalyses
-    -- the factor describes one regulatory programme rather than a
-    coincidence. This counts those links among each factor's top features and
-    compares the count with random feature sets of the same size drawn from
-    the same mappable features.
-
-    Links counted: ``translation`` (gene-protein), ``transcriptional_regulation``
-    (factor-gene) and protein-metabolite pairs joined through a reaction the
-    protein catalyses (substrate, product or allosteric regulator).
+    Counts the links among each factor's top molecules (gene to protein, factor
+    to target gene, and enzyme to a metabolite of its reaction) and compares
+    with random sets of the same size.
 
     Parameters
     ----------
     graph : networkx.MultiDiGraph
     loadings : dict
-        ``{layer: features x factors}`` -- ``MultiOmicsIntegrator.loadings_``.
+        ``{layer: features x factors}``.
     id_maps : dict, optional
-        ``{layer: {feature id: node id}}`` for features not keyed like nodes.
+        ``{layer: {feature id: node id}}``.
     top_n : int
-        Top features per layer, by loading.
+        Top molecules per layer, by loading.
     n_permutations : int
     random_state : int
 
     Returns
     -------
     dict
-        ``table`` : one row per factor -- ``n_links`` observed, ``null_mean``,
-        ``fold_enrichment``, ``p_value`` (one-sided permutation), ``q_value``.
-        ``nodes`` : ``{factor: [network nodes of its linked top features]}``,
-        for drawing the factor's subnetwork.
+        ``table``: per factor, ``n_links``, ``null_mean``,
+        ``fold_enrichment``, ``p_value`` and ``q_value``. ``nodes``:
+        ``{factor: linked nodes}``, for drawing.
     """
     from statsmodels.stats.multitest import multipletests
 
@@ -488,63 +460,37 @@ def factor_network_propagation(
     exclude_edge_types: Sequence[str] = ("protein_interaction",),
     exclude_nodes: Optional[Sequence[str]] = None,
 ) -> Dict[str, object]:
-    """Do a factor's features from different layers land in the same place?
+    """Test whether a factor's layers land in the same part of the network.
 
-    A joint factor loads on transcripts, proteins and metabolites at once, but
-    that makes it trans-omic only if those features are related by the
-    biochemistry -- if the transcripts it picks encode the enzymes acting on
-    the metabolites it picks. The network says whether they are.
-
-    Each layer's strongest features are seeded separately and diffused with a
-    random walk with restart. If the layers' profiles overlap, the factor's
-    features from different layers sit in the same region of the network: a
-    candidate mechanism. If they do not, the factor is co-variation across
-    layers with nothing joining it.
-
-    The overlap is the mean cosine similarity between the layers' diffusion
-    profiles. It is compared with the same statistic for random features of
-    the same layers and the same number per layer -- a null that matters,
-    because the transcriptome is ten times the size of the metabolome and
-    uniform draws would be almost all transcripts.
+    The top molecules of each layer are spread over the network separately by
+    random walk with restart. The overlap of the layers' profiles (mean cosine
+    similarity) is compared with that of random molecules drawn from the same
+    layers in the same numbers.
 
     Parameters
     ----------
     graph : networkx.Graph
-        The trans-omic network.
     loadings : dict
-        ``{layer: features x factors}``, as :class:`Factorisation` holds.
+        ``{layer: features x factors}``.
     id_maps : dict, optional
-        ``{layer: {feature id: node id}}`` when the tables are keyed by
-        something other than the network's identifiers.
+        ``{layer: {feature id: node id}}``.
     top_n : int
-        Seeds per layer per factor.
+        Starting molecules per layer and factor.
     alpha : float
         Restart parameter of the random walk.
     n_permutations : int
-        Layer-matched random seed sets for the null. They are propagated
-        together with the observed seeds, one factor at a time.
+        Number of random sets.
     random_state : int
     exclude_edge_types, exclude_nodes : sequence, optional
-        Relationships and molecules diffusion routes around. By default STRING
-        associations and currency metabolites, for the same reason path
-        tracing excludes them: left in, every factor's signal ends up on water
-        and ADP.
+        Edges and molecules to skip. Default: protein interactions and
+        currency metabolites.
 
     Returns
     -------
     dict
-        ``table`` : one row per factor -- seeds per layer, the observed
-        overlap, its null mean, p and q.
-        ``scores`` : nodes x factors, the combined diffusion profile.
-        ``top_nodes`` : ``{factor: DataFrame}`` of the nodes receiving most
-        signal *relative to layer-matched random seeds*, which is where to look
-        for what the factor is about. Ranking by raw score instead returns the
-        network's hubs for every factor alike.
-
-    References
-    ----------
-    Cowen L, et al. Network propagation: a universal amplifier of genetic
-    associations. *Nature Reviews Genetics* 18:551-562, 2017.
+        ``table``: per factor, the observed overlap, its null mean, p and q.
+        ``scores``: nodes x factors. ``top_nodes``: per factor, the nodes that
+        receive the most signal relative to random starting sets.
     """
     from itertools import combinations
 
@@ -751,41 +697,29 @@ __all__ += ["factor_network_propagation", "factor_layer_scores",
 def sample_pairing_check(first: pd.DataFrame, second: pd.DataFrame,
                          groups: pd.Series, n_permutations: int = 200,
                          min_samples: int = 4, random_state: int = 0) -> Dict[str, object]:
-    """Are the layers really measured on the same samples?
+    """Test whether two layers were measured on the same samples.
 
-    A joint factor model treats column ``i`` of every layer as one sample.
-    When the files merely share column *names*, that is an assumption, and the
-    data can test it where it bites: within a group of replicates, a sample
-    whose transcript of a gene is unusually high should, if it is the same
-    sample, tend to have that protein unusually high too.
-
-    So the statistic is computed **per gene, across the samples of a group**:
-    the Spearman correlation between a gene's transcript and protein over the
-    replicates, averaged over genes and groups. Shuffling which replicate is
-    paired with which destroys it only if the pairing was real. Correlating
-    across genes *within* a sample instead -- the obvious first attempt --
-    measures gene abundance, which is the same whatever the pairing, and says
-    nothing at all when values are centred per feature, as MoTrPAC's are.
+    Within a group of replicates, a sample with a high transcript level of a
+    gene should also have a high level of its protein, if it is the same sample.
+    The statistic is the Spearman correlation per gene across the replicates of
+    a group, averaged, compared with pairings shuffled within groups.
 
     Parameters
     ----------
     first, second : pandas.DataFrame
-        samples x features, with the features already matched between them
-        (the same gene in both) -- see :func:`matched_transcript_protein`.
+        Samples x features, with the same features in both
+        (see :func:`matched_transcript_protein`).
     groups : pandas.Series
-        Group label per sample; shuffling happens only within a group, so a
-        treatment effect cannot pass for pairing.
+        Group label per sample.
     n_permutations : int
     min_samples : int
-        Replicates a group needs to contribute.
+        Minimum replicates for a group to contribute.
+    random_state : int
 
     Returns
     -------
     dict
-        ``observed`` mean per-gene within-group correlation as listed,
-        ``null_mean`` under shuffled pairings, ``p_value``, ``n_genes``, and
-        ``paired``: whether the check supports treating the columns as the
-        same samples.
+        ``observed``, ``null_mean``, ``p_value``, ``n_genes`` and ``paired``.
     """
     rng = np.random.default_rng(random_state)
     features = [f for f in first.columns if f in set(second.columns)]
@@ -835,43 +769,28 @@ __all__ += ["sample_pairing_check"]
 
 def pairing_robustness(factorisation: "Factorisation", groups: pd.Series,
                        n_shuffles: int = 200, random_state: int = 0) -> pd.DataFrame:
-    """Is a factor carried by the design, or by variation between samples?
+    """Test whether a factor is carried by the design or by single samples.
 
-    A factor on which the layers agree can owe that agreement to two different
-    things, and they need different evidence. When :func:`sample_pairing_check`
-    cannot confirm that the layers share samples, only the first is safe; when
-    it can, both are real. A joint factor is usable regardless of the pairing
-    *if the layers agree about it whatever the pairing*. That is the case for a factor carried by
-    differences between groups -- timepoints, genotypes -- because the group
-    labels are known: every replicate of a timepoint scores alike, so it does
-    not matter which replicate is paired with which. A factor that lives in
-    replicate-to-replicate variation is joint only if the pairing is real.
+    Each layer's samples are projected onto the factor, the samples of all but
+    the first layer are shuffled within groups, and the agreement between the
+    layers' projections is recomputed.
 
-    The factor's loadings are held fixed; each layer's samples are projected
-    onto them, the rows of every layer but the first are shuffled within each
-    group, and the agreement between the layers' projections is recomputed.
+    Parameters
+    ----------
+    factorisation : Factorisation
+    groups : pandas.Series
+        Group label per sample.
+    n_shuffles : int
+    random_state : int
 
     Returns
     -------
     pandas.DataFrame
-        One row per factor: ``agreement`` (mean cross-layer Spearman of the
-        per-layer projections as listed), ``shuffled_agreement`` (mean under
-        within-group shuffles), ``retained`` (their ratio) and ``verdict``:
-
-        ``between-group``
-            the layers agree just as well under any within-group pairing, so
-            the factor is carried by differences between groups -- timepoints,
-            genotypes -- whose labels are certain. Interpretable whatever the
-            pairing.
-        ``within-group``
-            the agreement collapses when replicates are re-paired, so the
-            factor lives in sample-to-sample variation shared across layers.
-            Real and often the interesting part -- individual animals that
-            respond more strongly in every layer -- but only if the samples
-            really are paired; :func:`sample_pairing_check` decides that.
-        ``single-layer``
-            the layers do not agree about it even as listed: one layer's view
-            of the design wearing a joint label.
+        Per factor: ``agreement`` as listed, ``shuffled_agreement``,
+        ``retained`` and ``verdict``: ``between-group`` (carried by group
+        differences, interpretable whatever the pairing), ``within-group``
+        (carried by differences between samples; real only if the pairing is
+        confirmed) or ``single-layer`` (the layers do not agree).
     """
     from itertools import combinations
 

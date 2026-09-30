@@ -13,12 +13,6 @@ effect (``sign``), and the evidence it came from.  See
 Layers are optional.  A network built from transcriptomics and metabolomics
 alone is a first-class trans-omic network -- the builders for layers that are
 absent simply contribute no edges.
-
-References
-----------
-Yugi K, Kubota H, Hatano A, Kuroda S. Trans-Omics: How To Reconstruct
-Biochemical Networks Across Multiple 'Omic' Layers. *Trends in Biotechnology*
-34(4):276-290, 2016.
 """
 
 from typing import List, Dict, Any, Optional
@@ -26,7 +20,7 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 import logging
-from .elements import Reaction, Metabolite, Gene, Protein
+from .elements import Reaction, Metabolite, Gene, Protein, SignalingProtein
 from .layers import (
     Reactions, Pathways, Transcriptome, Proteome, Metabolome, Signaling,
 )
@@ -738,12 +732,6 @@ class Transnet:
         Returns
         -------
         list of dict
-
-        References
-        ----------
-        Kokaji T, et al. Transomics analysis reveals allosteric and gene
-        regulation axes for altered hepatic glucose-responsive metabolism in
-        obesity. *Science Signaling* 13:eaaz1236, 2020.
         """
         edges = []
 
@@ -1260,8 +1248,8 @@ class Transnet:
         """
         Get all neighbors of a node, optionally filtered by layer/type.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         node_id : str
             Node identifier
         layer : str, optional
@@ -1271,8 +1259,8 @@ class Transnet:
         direction : str
             Direction of edges: 'outgoing', 'incoming', or 'both' (default)
         
-        Returns:
-        --------
+        Returns
+        -------
         List[str]
             List of neighbor node IDs
         """
@@ -1330,8 +1318,8 @@ class Transnet:
         This is the core method for cross-layer discovery. Given a changed
         gene and a changed metabolite, find mechanistic paths connecting them.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         source : str
             Source node ID
         target : str
@@ -1343,13 +1331,13 @@ class Transnet:
         allowed_edge_types : List[str], optional
             Only use edges of these types
         
-        Returns:
-        --------
+        Returns
+        -------
         List[List[str]]
             List of paths, where each path is a list of node IDs
         
-        Examples:
-        ---------
+        Examples
+        --------
         # Find paths from a gene to a metabolite
         >>> paths = transnet.find_paths('ENSG00000123456', 'C00002', max_length=4)
         >>> for path in paths:
@@ -1405,13 +1393,13 @@ class Transnet:
         """
         Get annotations for edges in a path.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         path : List[str]
             List of node IDs representing a path
         
-        Returns:
-        --------
+        Returns
+        -------
         List[Dict[str, Any]]
             List of edge annotations, one for each edge in the path
         """
@@ -1459,8 +1447,8 @@ class Transnet:
         Given sets of changed nodes from different omics layers, find
         mechanistic paths connecting them.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         changed_nodes : Dict[str, List[str]]
             Dictionary mapping layer names to lists of changed node IDs,
             e.g. ``{'Transcriptome': ['gene1'], 'Metabolome': ['met1']}``
@@ -1469,8 +1457,8 @@ class Transnet:
         path_max_length : int
             Maximum path length to search
         
-        Returns:
-        --------
+        Returns
+        -------
         pd.DataFrame
             DataFrame with columns: source, target, path_length, path, 
             source_layer, target_layer, edge_types
