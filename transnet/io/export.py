@@ -1,27 +1,12 @@
-"""Network export utilities for third-party visualisation tools.
+"""Export a network for other tools.
 
-Supported formats
------------------
-* **Arena3D Web** (arena3dw.eu) — JSON format for the multi-layer 3-D network
-  viewer from the Pavlopoulos lab.
-* **Transomics2cytoscape** — CSV/TSV files consumed by the Bioconductor R package
-  ``transomics2cytoscape`` (Nishida et al., 2021) via RCy3 to render multi-layer
-  transomics networks inside Cytoscape.
-* **Cytoscape JSON** (``cytoscape.js`` / ``File → Import → Network from JSON``) —
-  generic format readable by any Cytoscape-compatible tool.
+* :func:`to_cytoscape_json`: Cytoscape Desktop and cytoscape.js.
+* :func:`to_arena3d`: Arena3D Web, a 3-D multilayer network viewer.
+* :func:`to_transomics2cytoscape`: tables for the Bioconductor package
+  transomics2cytoscape, which draws stacked layers in Cytoscape.
 
-Typical usage::
-
-    from transnet.io.export import to_arena3d, to_transomics2cytoscape
-
-    # From a Transnet object
-    json_bytes = to_arena3d(transnet_obj)
-
-    # Save to file
-    to_arena3d(transnet_obj, path="my_network.arena3d.json")
-
-    # Export Transomics2cytoscape bundle
-    to_transomics2cytoscape(transnet_obj, output_dir="cytoscape_bundle/")
+Each takes a ``Transnet`` object or a graph. Plain CSV files are written by
+:func:`transnet.io.write_network`.
 """
 
 from __future__ import annotations
@@ -239,7 +224,7 @@ def to_arena3d(
 # Transomics2cytoscape export
 # ---------------------------------------------------------------------------
 
-# The Bioconductor package transomics2cytoscape (Nishida et al. 2021)
+# The Bioconductor package transomics2cytoscape
 # expects the following inputs to createTransomicsNetwork():
 #
 #   networkDataList  — a named list of igraph objects OR data frames
