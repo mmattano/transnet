@@ -12,13 +12,13 @@ ORGANISMS ?= mouse human rat yeast ecoli
 # leaves it out; run it by hand.
 WALKTHROUGHS := build_network responsive_network reaction_regulation \
                 regulatory_paths temporal_and_hubs compare_conditions \
-                network_topology transcription_factors
+                network_topology export_network transcription_factors
 STUDIES := $(wildcard notebooks/studies/*.py)
 
 .PHONY: help networks notebooks studies docs test test-all clean
 
 help:
-	@echo "make networks   build data/<organism>/latest for: $(ORGANISMS)"
+	@echo "make networks   rebuild data/<organism>/latest by hand for: $(ORGANISMS)"
 	@echo "make notebooks  run the offline walkthroughs"
 	@echo "make studies    run the studies (needs the networks)"
 	@echo "make docs       build the documentation into docs/build/html"
@@ -62,5 +62,5 @@ test-all:
 	$(PYTHON) -m pytest tests -q -m "not network"
 
 clean:
-	rm -rf docs/build notebooks/exports
+	rm -rf docs/build notebooks/exports notebooks/walkthroughs/exports
 	find . -name __pycache__ -not -path "./venv/*" -exec rm -rf {} +

@@ -1,11 +1,16 @@
 # TransNet: Trans-Omics Network Reconstruction and Analysis
 
-[![Python package](https://github.com/mmattano/transnet/actions/workflows/python-package.yml/badge.svg)](https://github.com/mmattano/transnet/actions/workflows/python-package.yml)
-[![Update Networks](https://github.com/mmattano/transnet/actions/workflows/update.yml/badge.svg)](https://github.com/mmattano/transnet/actions/workflows/update.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/mmattano/transnet/actions/workflows/tests.yml/badge.svg)](https://github.com/mmattano/transnet/actions/workflows/tests.yml)
+[![Docs](https://github.com/mmattano/transnet/actions/workflows/docs.yml/badge.svg)](https://mmattano.github.io/transnet/)
+[![PyPI](https://img.shields.io/pypi/v/transnet.svg)](https://pypi.org/project/transnet/)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-TransNet builds a **trans-omic network**, a typed, directed, signed regulatory
-hierarchy connecting omic layers, and analyses it as a network.
+**Documentation: [mmattano.github.io/transnet](https://mmattano.github.io/transnet/)**
+
+TransNet builds a **trans-omic network**, in which molecules from different
+omic layers are joined by typed, directed and signed regulatory edges, and
+analyses it.
 
 ```
 signal  ->  TF  ->  gene  ->  enzyme protein  ->  REACTION  <-  metabolite
@@ -15,25 +20,24 @@ signal  ->  TF  ->  gene  ->  enzyme protein  ->  REACTION  <-  metabolite
                                                                  regulator)
 ```
 
-Every edge records **which** relationship it represents, **which direction** its
-regulatory effect runs in, and **what evidence** it came from. That is what lets
-TransNet answer the question trans-omics exists to ask:
+Every edge records **which** relationship it represents, whether it increases
+or decreases its target, and **which database** it comes from. This lets
+TransNet answer the central question of trans-omics:
 
-> Is this reaction regulated through gene expression, or through its allosteric
-> effectors, and do the two agree?
+> Is this reaction regulated through the amount of its enzyme, or through the
+> metabolites acting on it, and do the two agree?
 
-**Trans-omics is not multi-omics with more layers.** Multi-omics integration asks
-which molecules co-vary across data types. Trans-omics asks how a signal
-*propagates* through a biochemical network: which regulatory relationship carried
-it, in which direction, and whether the observed changes are consistent with that
-mechanism. Every analysis below is meaningful only because of the network: remove
-the edges and none of it can be computed.
+Multi-omics integration usually asks which molecules change together across
+data types. Trans-omics asks how a change travels through the biochemical
+network: which regulatory relationship carried it, in which direction, and
+whether the measured changes are consistent with that mechanism. None of the
+analyses below can be computed without the network's edges.
 
 ## Install
 
 ```bash
-pip install -e .          # from a clone
 pip install transnet      # from PyPI
+pip install -e .          # from a clone
 ```
 
 ## Quickstart
@@ -44,44 +48,47 @@ from transnet import (
     map_omics_to_network, reaction_regulation_table,
 )
 
-graph = load_example_network()          # bundled, offline, no credentials
+graph = load_example_network()          # bundled, works offline
 tables = load_example_omics()
 
 report = map_omics_to_network(
     graph, tables,
     id_column="id", log2fc_column="log2FC", qvalue_column="padj",
 )
-print(report)     # how many features matched a node, per layer
+print(report)     # how many rows of each table matched a node
 
 table = reaction_regulation_table(graph)
 table[table["controversial"]]           # reactions whose two axes disagree
 ```
 
 ```
-reaction  name                          gene_axis   metabolite_axis  controversial
-R00299    hexokinase                    activated   inhibited        True
-R00756    6-phosphofructokinase         activated   inhibited        True
-R00835    glucose-6-phosphate dehydrog. activated   inhibited        True
-R00341    phosphoenolpyruvate carboxyk. inhibited   activated        True
-R00303    glucose-6-phosphatase         inhibited   activated        True
+reaction                              name  gene_axis  metabolite_axis  controversial
+  R00299                        hexokinase          1               -1           True
+  R00756             6-phosphofructokinase          1               -1           True
+  R00835 glucose-6-phosphate dehydrogenase          1               -1           True
+  R00341 phosphoenolpyruvate carboxykinase         -1                1           True
+  R00303             glucose-6-phosphatase         -1                1           True
 ```
 
-More enzyme meeting more inhibitor; less enzyme meeting more substrate. Neither
-axis alone would have shown the conflict.
+In the first three reactions the enzyme increased (`gene_axis` +1) while the
+metabolites acting on it pushed the reaction down (`metabolite_axis` -1); in
+the last two it is the other way round. Neither layer alone would show the
+conflict.
 
 ## The analysis catalogue
 
-These analyses define the field. Each maps to one function and one paper; full
-details in [`docs/source/transomics_analyses.rst`](docs/source/transomics_analyses.rst),
-bibliography in [`CITATIONS.md`](CITATIONS.md).
+Each analysis maps to one function and one publication. Details are in the
+[analysis catalogue](https://mmattano.github.io/transnet/transomics_analyses.html),
+and the bibliography in [`CITATIONS.md`](CITATIONS.md).
 
 | Analysis | Function | Source |
 |---|---|---|
 | Trans-omic network reconstruction | `Transnet.generate_graph`, `responsive_subnetwork` | Yugi *et al.* 2016 |
 | Reaction regulation-axis attribution | `reaction_regulation_table` | Kokaji *et al.* 2020; Egami *et al.* 2021 |
-| Per-pathway regulation balance | `regulation_axis_summary` | Egami *et al.* 2021 |
+| Per-pathway regulation balance | `regulation_axis_summary`, `kegg_reaction_pathways` | Egami *et al.* 2021 |
 | Metabolite regulatory roles (which changed metabolites regulate an enzyme) | `metabolite_regulatory_roles`, `regulatory_role_enrichment` | Kokaji *et al.* 2020 |
-| Signed regulatory-path tracing | `trace_regulatory_paths` | Kawata *et al.* 2018 |
+| Signed regulatory-path tracing | `trace_regulatory_paths`, `path_consistency_summary` | Kawata *et al.* 2018 |
+| Signal flow and propagation | `hierarchical_propagation`, `downstream_influence` | Yugi *et al.* 2016 |
 | Cross-layer connectivity | `cross_layer_connectivity` | Sugimoto *et al.* 2024 |
 | Trans-omic hub identification | `transomic_hubs` | Morita *et al.* 2025 |
 | Temporal and dose structure on the network | `assign_temporal_parameters`, `temporal_network_structure` | Morita 2025; Kawata 2018 |
@@ -90,110 +97,108 @@ bibliography in [`CITATIONS.md`](CITATIONS.md).
 | Regulatory motifs (product inhibition, feedback, feed-forward) | `regulatory_motifs` | Milo *et al.* 2002 |
 | Structural vulnerability (what holds the response together) | `structural_vulnerability` | Morita *et al.* 2025 |
 | Convergence against a null model | `convergence_significance` | Maslov & Sneppen 2002 |
+| Comparing conditions | `compare_transomic_networks` | Egami *et al.* 2021 |
 
-### Does it reproduce published trans-omics?
+Every analysis has a figure in `transnet.visualization`, and factor models can
+be read through the network with `transnet.analysis.factors`.
 
-`notebooks/studies/obese_liver.py` runs the catalogue on the liver data of
-Uematsu *et al.* (*iScience* 2022; wild-type and ob/ob mice, fasting and after
-glucose) and checks the published claims one by one. It reproduces 4 of 6 it can
-test -- healthy liver responds to glucose through metabolites, obese liver is
-rewired through enzyme amount -- reports the two it does not, and sets every
-answer beside what a per-layer analysis of the same data can say. See
-[docs/source/published_study.rst](docs/source/published_study.rst).
+## Studies on published data
 
-Two further studies are written up the same way, each set beside the
-conclusions its own authors published: brown adipocytes under norepinephrine
-([docs/source/brown_adipocytes.rst](docs/source/brown_adipocytes.rst), the data
-of Anagho-Mattanovich *et al.* 2025) and MoTrPAC endurance training across six
-rat tissues ([docs/source/motrpac_study.rst](docs/source/motrpac_study.rst),
-against the consortium's *Nature* 2024 paper). Both report what the catalogue
-fails to show on that data as plainly as what it shows.
+Four studies run the whole catalogue on published data and compare the results
+with the authors' own conclusions. Each has a
+[summary page](https://mmattano.github.io/transnet/) and a notebook with every
+table and figure, and each reports what the analysis fails to show as plainly
+as what it shows.
+
+| Study | Data | Question |
+|---|---|---|
+| [Brown adipocytes](docs/source/brown_adipocytes.rst) | mouse brown fat cells stimulated with norepinephrine; three layers, up to seven time points (Anagho-Mattanovich *et al.* 2025) | which reactions carry heat production, and through which mechanism |
+| [MoTrPAC](docs/source/motrpac_study.rst) | endurance training in six rat tissues, with phospho-, acetyl- and ubiquitin-proteomics (MoTrPAC 2024) | do tissues respond through the same mechanisms; how much lies in enzyme modification |
+| [Obese liver: metabolic panel](docs/source/obese_liver_panel.rst) | lean and obese mouse liver, fasted and after glucose; 19 enzymes (Uematsu *et al.* 2022) | are the published claims reproduced (4 of 5 testable) |
+| [Obese liver: time course](docs/source/liver_timecourse.rst) | the same comparison genome-wide, over four hours (Kokaji *et al.* 2020) | how the two genotypes differ as networks over time |
 
 ## Layers are optional
 
-**No analysis requires a particular layer.** A study with only transcriptomics
-and metabolomics is a normal study, not a degraded input. Each function
-discovers what the network actually contains and degrades by reporting *weaker
-evidence*, never by failing:
+**No analysis requires a particular layer.** A study with only
+transcriptomics and metabolomics is a normal study. Each function uses the
+layers the network has and reports weaker evidence, rather than failing, when
+a layer is missing:
 
-- `reaction_regulation_table` records which chain of layers supported each
-  gene-axis call in `gene_axis_evidence`: `"protein"`, `"gene_protein"`,
-  `"gene"`, `"tf_gene_protein"`, or `None`;
-- `trace_regulatory_paths` infers its own starting layer and reports the
-  hierarchy it used;
-- an omics table supplied for a layer the network lacks is *reported* in the
-  mapping report, not raised.
-
-`notebooks/walkthroughs/regulatory_paths.py` demonstrates this by running the same analysis
-twice, with and without the optional Signaling layer.
+- `reaction_regulation_table` records in `gene_axis_evidence` which layers
+  supported each enzyme-axis call: `"protein"`, `"gene_protein"`, `"gene"`,
+  `"tf_gene_protein"`, or `None`;
+- `trace_regulatory_paths` starts from the highest layer present and reports
+  which one that was;
+- a table supplied for a layer the network lacks is reported in the mapping
+  report, not raised as an error.
 
 ## Notebooks
 
-Everything runnable lives in [`notebooks/`](notebooks/), as jupytext scripts:
+Everything runnable is in [`notebooks/`](notebooks/), as jupytext scripts:
 plain `.py` files that are also notebooks. Open them in Jupyter
-(`jupytext --to notebook notebooks/walkthroughs/build_network.py`), run them as scripts,
-or read them rendered in the documentation.
+(`jupytext --to notebook notebooks/walkthroughs/build_network.py`), run them as
+scripts, or read them rendered in the documentation.
 
-The walkthroughs run offline against `data/example/`, a curated slice of mouse
-hepatic glucose metabolism with real KEGG, UniProt and EC identifiers. They
-finish in seconds and need no credentials:
+The walkthroughs run offline on `transnet/data/example/`, a small curated part of mouse
+liver glucose metabolism with real KEGG, UniProt and EC identifiers. They finish
+in seconds and need no credentials:
 
 ```bash
-make notebooks          # or: python notebooks/walkthroughs/build_network.py
+make notebooks
 ```
 
-| Notebook | Covers |
+| Walkthrough | Covers |
 |---|---|
-| `build_network` | the typed network: layers, edge types, signs, and how much of it crosses layers |
-| `responsive_network` | mapping data on, the coverage report, and the responsive subnetwork |
-| `reaction_regulation` | the flagship analysis: which axis regulates each reaction, and where they disagree |
-| `regulatory_paths` | signed path tracing, and what happens when a layer is missing |
-| `temporal_and_hubs` | hubs that join layers, and whether the wiring explains the timing |
-| `compare_conditions` | two conditions as typed networks; which metabolites act back on enzymes |
-| `network_topology` | statistics, centrality, communities, active modules, diffusion, and four ways to export |
-| `transcription_factors` | which factors drove the responsive genes, and where the annotation runs out |
+| `build_network` | the network: layers, edge types, signs, the builder API, the organism registry |
+| `responsive_network` | mapping data onto the network, the coverage report, the responsive subnetwork |
+| `reaction_regulation` | which axis regulates each reaction, controversial reactions, per-pathway balance, the phospho axis, transcript–protein concordance |
+| `regulatory_paths` | predicting a metabolite's direction along signed paths, from a receptor to a metabolite, and by propagation |
+| `temporal_and_hubs` | molecules that connect layers, and whether the network explains response timing |
+| `compare_conditions` | two conditions compared as networks; which changed metabolites regulate enzymes |
+| `network_topology` | statistics, centrality, communities, active modules, motifs, weak points, a null model, diffusion |
+| `export_network` | every export format: CSV, adjacency matrix, Cytoscape, Arena3D, transomics2cytoscape, HTML, static figures |
+| `transcription_factors` | which factors drove the changed genes, and where the annotation runs out |
 | `external_annotation` | Reactome, HMDB, BRENDA, ChIP-Atlas and KEGG called directly (needs network access) |
 
-The studies need a built network and take minutes:
+The studies need a built network and take minutes to hours:
 
 ```bash
-make studies            # brown adipocytes, MoTrPAC, Uematsu, Kokaji
+make studies
 ```
 
-| Notebook | Data |
-|---|---|
-| `brown_adipocytes` | norepinephrine-stimulated brown adipocytes, three layers, seven timepoints |
-| `motrpac_rat` | MoTrPAC endurance training, six tissues on one rat network, with phospho-, acetyl- and ubiquitin-proteomics |
-| `obese_liver` | Uematsu *et al.* 2022, fetched at run time, claims scored |
-| `kokaji_liver` | Kokaji *et al.* 2020, a genome-wide liver time course in two genotypes |
+## Organism networks
 
-`notebooks/extra/` holds analyses written for collaborators rather than for
-this documentation.
+Reference networks for human, mouse, rat, yeast and *E. coli* are built from
+KEGG, UniProt, Ensembl, STRING, ChIP-Atlas and BRENDA by
+`maintenance/build_networks.py`, and written to `data/<organism>/<date>/` as
+`nodes.csv` and `interactions.csv`. They are several hundred megabytes and can
+be rebuilt at any time, so they are not kept in the repository.
 
-### BRENDA credentials
-
-The allosteric edges come from BRENDA. Register free at
-[brenda-enzymes.org](https://www.brenda-enzymes.org/), then either export the
-credentials, pass them inline, or let the scripts prompt:
+**The networks are updated by hand**, not on a schedule, because a rebuild
+changes the numbers in every study and should be checked:
 
 ```bash
-export BRENDA_EMAIL='you@example.com' BRENDA_PASSWORD='...'
-python maintenance/build_networks.py --organisms mouse --brenda
+export BRENDA_EMAIL='you@example.com' BRENDA_PASSWORD='...'   # free registration
+make networks ORGANISMS=mouse        # 30-90 min; resumes if interrupted
+make studies                         # rerun the studies, refresh the doc figures
 ```
 
-`Proteome.get_brenda_kinetics()` reads the same two variables and prompts if
-they are unset. Without BRENDA the metabolite regulation axis is limited to
-substrates and products, and the analyses say so.
+Read the build report printed at the end: a missing layer or edge type is
+reported, with a non-zero exit status. Without BRENDA credentials the network
+has no allosteric edges, and the metabolite axis is limited to substrates and
+products. Adding an organism takes one call to
+`transnet.organisms.register_organism`; see
+[organism networks](https://mmattano.github.io/transnet/organism_networks.html).
 
 ## The network model
 
-A `networkx.MultiDiGraph`. Both properties are load-bearing:
+A `networkx.MultiDiGraph`. Both properties matter:
 
 - **Directed**, because a substrate flows into a reaction and a product flows
-  out; a transcription factor regulates its target and not the reverse.
-- **Multigraph**, because glucose-6-phosphate is both the *product* of
-  hexokinase and its *allosteric inhibitor*: two edges with opposite signs that
-  a simple graph collapses into one meaningless edge.
+  out, and a transcription factor regulates its target, not the reverse.
+- **Multigraph**, because glucose 6-phosphate is both the *product* of
+  hexokinase and its *allosteric inhibitor*: two edges with opposite signs,
+  which a simple graph would merge into one.
 
 ```python
 >>> graph.get_edge_data("C00668", "R00299")     # G6P -> hexokinase
@@ -218,80 +223,40 @@ A `networkx.MultiDiGraph`. Both properties are load-bearing:
 | `enzymatic` | Proteome → Metabolome | 0 | KEGG (EC number) |
 
 Sign `0` means **unknown**, not "no effect": ChIP-Atlas says a factor binds a
-promoter, not whether it activates or represses. Analyses count those steps
+promoter, not whether it activates or represses it. Analyses count such steps
 separately, so a tentative prediction is never presented as a confident one.
 
-Where an algorithm needs a simple undirected graph, `to_simple_graph()` projects
-one and records what it collapsed rather than discarding it silently.
+Full details: [the network model](https://mmattano.github.io/transnet/network_model.html).
 
-Full details: [`docs/source/network_model.rst`](docs/source/network_model.rst).
+## Export
 
-## Building from databases
+A network, or any part of it, can be written for other tools
+(see the [export walkthrough](notebooks/walkthroughs/export_network.py)):
 
-```python
-from transnet import Transnet, Proteome, Metabolome, Reactions
-
-proteome = Proteome()
-proteome.populate(kegg_organism="mmu", ncbi_organism="10090")
-proteome.get_interaction_partners()          # STRING
-proteome.get_transcription_factor_targets()  # ChIP-Atlas
-proteome.get_brenda_kinetics()               # BRENDA: allosteric effectors
-
-network = Transnet(proteome=proteome, metabolome=metabolome, reactions=reactions)
-graph = network.generate_graph()
-network.save_network("data/mouse/latest")
-```
-
-ChIP-Atlas lists every gene with any detectable binding, so
-`get_transcription_factor_targets()` keeps only targets whose *mean* binding
-score across the factor's experiments reaches `score_threshold` (default 100).
-Without it a factor brings in ~15,000 targets and transcriptional regulation
-becomes 91% of the network. Pass `score_threshold=0` for the permissive
-behaviour; see [the network model docs](docs/source/network_model.rst) for the
-score scale.
-
-Networks for human, mouse, rat, yeast and *E. coli* are built by
-`maintenance/build_networks.py`, each written to `data/<organism>/<date>/` as
-`nodes.csv` plus `interactions.csv`. Rat is the network behind the MoTrPAC
-study, mouse the one behind the Uematsu study. They are large (the human one is
-~330 MB) and regenerable, so they are not kept in the repository. Build them
-with `make networks`.
-
-## Visualization
-
-```python
-from transnet.visualization import (
-    plot_transomic_network,     # 2.5D stacked layers (transomics2cytoscape style)
-    plot_regulation_axes,       # per-pathway axis balance
-    plot_layer_connectivity,    # layer x layer edge heatmap
-)
-```
-
-Networks also export to Cytoscape, Arena3D and transomics2cytoscape via
-`transnet.io`.
-
-## Factors, read through the network
-
-`transnet.analysis.factors` fits NMF factors and then reads them *through the
-network*: which part of the design each factor follows, how much it
-reconstructs, and whether
-its strongest features are actually connected. Other decompositions are not
-reimplemented here; `sklearn.decomposition.PCA` is one line and always
-current.
+| Format | Function |
+|---|---|
+| CSV (`nodes.csv`, `interactions.csv`) | `transnet.io.write_network` / `read_network` |
+| Adjacency matrix | `Transnet.generate_adjacency_matrix` |
+| Cytoscape JSON | `transnet.io.to_cytoscape_json` |
+| Arena3D Web | `transnet.io.to_arena3d` |
+| transomics2cytoscape (R) | `transnet.io.to_transomics2cytoscape` |
+| Self-contained interactive HTML | `plot_transomic_network_interactive(...).write_html(...)` |
 
 ## Tests
 
 ```bash
-pytest                  # offline, ~10 s
-pytest -m network       # additionally hits live KEGG/UniProt
+make test               # offline unit tests, about 15 s
+pytest -m slow          # also runs every offline walkthrough
+pytest -m network       # also calls the live databases
 ```
 
 ## Citing
 
-TransNet implements published methods; each carries its reference in its
-docstring. The framework as a whole is due to Yugi K, Kubota H, Hatano A,
-Kuroda S. *Trans-Omics: How To Reconstruct Biochemical Networks Across Multiple
-'Omic' Layers.* Trends in Biotechnology 34(4):276-290, 2016. Full bibliography
+A TransNet manuscript is in preparation. Each analysis names the publication
+it comes from in the [analysis catalogue](https://mmattano.github.io/transnet/transomics_analyses.html).
+The framework as a whole builds on Yugi K, Kubota H, Hatano A, Kuroda S.
+*Trans-Omics: How To Reconstruct Biochemical Networks Across Multiple 'Omic'
+Layers.* Trends in Biotechnology 34(4):276-290, 2016. The full bibliography is
 in [`CITATIONS.md`](CITATIONS.md).
 
 ## License
