@@ -145,7 +145,7 @@ data/*/latest
 .claude/worktrees/
 
 # NOT ignored, and deliberately so:
-#   data/example/                        bundled; every example and test needs it
+#   transnet/data/example/               bundled; every example and test needs it
 #   data/sample_data/experimental_data/  source data for analyses/mouse_transomics.py
 #   data/master_reactions.csv            the KEGG reaction table, reused to avoid
 #                                        ~12,000 REST calls on every network build
@@ -165,6 +165,10 @@ data/.checkpoints/
 # Notebook and study outputs (regenerable: make notebooks, make studies)
 notebooks/exports/
 notebooks/walkthroughs/exports/
+exports/
+
+# Analyses written for collaborators, kept outside the repository
+notebooks/extra/
 data/brown_adipocyte_results/
 data/oslo2/
 data/oslo2_results/
