@@ -124,6 +124,53 @@ def plot_axis_composition(summary: pd.DataFrame, label: str = "contrast",
     return figure
 
 
+_ROLE_OF_EDGE = {"allosteric_activation": "activator", "allosteric_inhibition": "inhibitor",
+                 "substrate": "substrate", "product": "product"}
+
+
+def reaction_contributions(graph, reaction: str) -> pd.DataFrame:
+    """Each measured molecule's push on one reaction.
+
+    The push is the molecule's log2 fold change, signed by its effect: enzymes,
+    their transcripts, substrates and activators push the reaction forward;
+    products and inhibitors push against it. Currency metabolites are left out.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``molecule``, ``name``, ``role``, ``axis`` (``"enzyme"`` or
+        ``"metabolite"``), ``log2fc``, ``regulated`` and ``contribution``.
+    """
+    rows = []
+
+    def add(node, role, axis, effect):
+        data = graph.nodes[node]
+        log2fc = data.get("log2fc")
+        if log2fc is None or pd.isna(log2fc):
+            return
+        rows.append({"molecule": node, "name": _name(graph, node), "role": role, "axis": axis,
+                     "log2fc": float(log2fc), "regulated": int(data.get("regulated", 0) or 0),
+                     "contribution": effect * float(log2fc)})
+
+    for source, _, data in graph.in_edges(reaction, data=True):
+        edge_type = data.get("edge_type")
+        if edge_type == "catalysis":
+            add(source, "enzyme", "enzyme", 1)
+            for gene, _, gene_edge in graph.in_edges(source, data=True):
+                if gene_edge.get("edge_type") == "translation":
+                    add(gene, "transcript", "enzyme", 1)
+        elif edge_type == "gene_catalysis":
+            add(source, "transcript", "enzyme", 1)
+        elif edge_type in _ROLE_OF_EDGE and source not in CURRENCY_METABOLITES:
+            add(source, _ROLE_OF_EDGE[edge_type], "metabolite", _EFFECT[edge_type])
+    for _, target, data in graph.out_edges(reaction, data=True):
+        if data.get("edge_type") == "product" and target not in CURRENCY_METABOLITES:
+            add(target, "product", "metabolite", _EFFECT["product"])
+
+    columns = ["molecule", "name", "role", "axis", "log2fc", "regulated", "contribution"]
+    return pd.DataFrame(rows, columns=columns)
+
+
 def plot_controversial_reactions(graph, table: pd.DataFrame, max_enzymes: int = 6,
                                  title: str = "Controversial reactions: the axes pull apart"):
     """Tug-of-war per controversial enzyme (reaction regulation axes).
@@ -149,7 +196,7 @@ def plot_controversial_reactions(graph, table: pd.DataFrame, max_enzymes: int = 
     groups = sorted(groups, key=lambda g: -g[2]["contribution"].abs().sum())[:max_enzymes]
 
     height = sum(len(c) + 1.4 for _, _, c in groups)
-    figure, axes = plt.subplots(figsize=(8.5, 0.38 * height + 1.6))
+    figure, axes = plt.subplots(figsize=(9.5, 0.38 * height + 1.6))
     style_axes(axes, grid_axis="x")
     # start below the top edge so the first heading clears the subtitle
     y, ticks, ticklabels = 0.9, [], []
@@ -172,7 +219,7 @@ def plot_controversial_reactions(graph, table: pd.DataFrame, max_enzymes: int = 
         y += 0.85
     axes.set_yticks(ticks)
     axes.set_yticklabels(ticklabels, fontsize=8.5)
-    axes.invert_yaxis()
+    axes.set_ylim(y - 0.4, 0.2)        # top at 0.2, so the first heading stays inside
     axes.axvline(0, color=BASELINE, linewidth=1)
     limit = max(1.0, max(abs(c["contribution"]).max() for _, _, c in groups) * 1.15)
     axes.set_xlim(-limit, limit)
@@ -339,16 +386,23 @@ def plot_transomic_hubs(hubs: pd.DataFrame, top_n: int = 20,
     shown = hubs.sort_values("cross_layer_degree", ascending=False).head(top_n).iloc[::-1]
     figure, axes = plt.subplots(figsize=(8.5, 0.3 * len(shown) + 1.6))
     style_axes(axes, grid_axis="x")
-    labels = [str(n or node).split(";")[0][:26] for n, node in zip(shown["name"], shown["node"])]
+    symbols = shown["symbol"] if "symbol" in shown else [None] * len(shown)
+    labels = []
+    for name, symbol, node in zip(shown["name"], symbols, shown["node"]):
+        if symbol and str(symbol) not in ("nan", "None", ""):
+            labels.append(str(symbol))
+        else:
+            labels.append(str(name or node).split(";")[0].split(" (")[0][:30])
     colors = [LAYER_COLORS.get(l, MUTED) for l in shown["layer"]]
     axes.barh(labels, shown["cross_layer_degree"], color=colors, height=0.65,
               edgecolor=SURFACE, linewidth=1)
     span = shown["cross_layer_degree"].max()
     for i, (_, row) in enumerate(shown.iterrows()):
         state = int(row.get("regulated") or 0)
-        mark = {1: " up", -1: " down"}.get(state, "")
+        mark = {1: ", up", -1: ", down"}.get(state, "")
+        layers = int(row["n_layers_touched"])
         axes.text(row["cross_layer_degree"] + 0.01 * span, i,
-                  f"{int(row['n_layers_touched'])} layer(s){mark}", va="center",
+                  f"reaches {layers} layer{'s' if layers != 1 else ''}{mark}", va="center",
                   fontsize=8, color=UP if state > 0 else DOWN if state < 0 else SECONDARY)
     axes.set_xlim(0, span * 1.25)
     axes.set_xlabel("edges to other layers")
@@ -579,11 +633,10 @@ def plot_similarity_heatmap(matrix: pd.DataFrame, title: str, value_label: str =
 
 def plot_temporal_structure(graph, structure: Dict, time_unit: str = "",
                             title: str = "Does the wiring explain the timing?"):
-    """Degree against response time, per layer, with the Spearman test (response timing).
+    """Connections against half-response time, per layer, with a Spearman test.
 
-    Morita et al. report that in healthy liver the best-connected molecules
-    respond first. A direction is only stated when the correlation is
-    significant, as :func:`~transnet.temporal_network_structure` decides.
+    A direction is stated only when the correlation is significant, as
+    :func:`~transnet.temporal_network_structure` decides.
     """
     from transnet.biology.schema import order_layers
 

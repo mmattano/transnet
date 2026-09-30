@@ -96,21 +96,42 @@ def plot_network_metrics(graph, title: str = "What this network is made of"):
 
 
 def plot_community_network(graph, communities: Dict[str, int], max_communities: int = 8,
+                           community: Optional[int] = None, label_top: int = 15,
+                           max_nodes: int = 150,
                            title: str = "Do the communities span layers?"):
-    """Community composition by layer, and the largest communities drawn.
+    """Community composition by layer (left), and one community drawn (right).
 
-    A community that lives inside one layer is a statement about how well that
-    layer is annotated. A community holding genes, proteins and metabolites is
-    a candidate module, and the question worth asking of
-    :func:`~transnet.analysis.network_analysis.detect_communities`.
+    In the drawing, the fill colour is the layer, a red or blue ring marks a
+    molecule that went up or down, and dashed edges are regulatory rather than
+    mass flow. The ``label_top`` molecules with the most connections inside the
+    community are named, changed molecules first.
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        The network the communities were detected on.
+    communities : dict
+        Node to community id, as returned by ``detect_communities``.
+    max_communities : int
+        How many of the largest communities to list in the bar chart.
+    community : int, optional
+        Which community to draw. Defaults to the largest one.
+    label_top : int
+        How many molecules to name in the drawing; 0 names none.
+    max_nodes : int
+        Upper limit on drawn molecules, keeping the best connected.
+    title : str
+        Figure title.
     """
+    from transnet.visualization.transomics_vis import EDGE_STYLES, _label
+
     frame = pd.DataFrame({
-        "node": list(communities),
-        "community": [communities[n] for n in communities],
-        "layer": [_layer(graph, n) for n in communities if n in graph],
+        "node": [n for n in communities if n in graph],
+        "community": [communities[n] for n in communities if n in graph],
     })
     if frame.empty:
         raise ValueError("no communities to draw")
+    frame["layer"] = [_layer(graph, n) for n in frame["node"]]
 
     sizes = frame["community"].value_counts().head(max_communities)
     shown = frame[frame["community"].isin(sizes.index)]
@@ -118,8 +139,8 @@ def plot_community_network(graph, communities: Dict[str, int], max_communities: 
                    .unstack(fill_value=0).loc[sizes.index])
     composition = composition[order_layers(composition.columns)]
 
-    figure, axes = plt.subplots(1, 2, figsize=(12, 4.2),
-                                gridspec_kw={"width_ratios": [1.15, 1]})
+    figure, axes = plt.subplots(1, 2, figsize=(13, 5.2),
+                                gridspec_kw={"width_ratios": [1, 1.25]})
 
     style_axes(axes[0], grid_axis="x")
     left = np.zeros(len(composition))
@@ -134,22 +155,64 @@ def plot_community_network(graph, communities: Dict[str, int], max_communities: 
     axes[0].invert_yaxis()
     axes[0].set_xlabel("molecules")
     spanning = int((composition > 0).sum(axis=1).gt(1).sum())
-    axes[0].set_title(f"{spanning} of {len(composition)} shown communities span "
+    axes[0].set_title(f"{spanning} of {len(composition)} largest communities span "
                       f"more than one layer", fontsize=9.5, color=SECONDARY, loc="left")
-    axes[0].legend(frameon=False, fontsize=8, labelcolor=SECONDARY, ncol=2)
+    axes[0].legend(frameon=False, fontsize=8, labelcolor=SECONDARY, loc="lower right")
 
-    biggest = sizes.index[0]
-    members = [n for n in shown[shown["community"] == biggest]["node"] if n in graph][:150]
-    sub = graph.subgraph(members)
-    position = nx.spring_layout(sub.to_undirected() if sub.is_directed() else sub, seed=0)
-    axes[1].set_axis_off()
-    for u, v in (sub.to_undirected() if sub.is_directed() else sub).edges():
-        axes[1].plot(*zip(position[u], position[v]), color=GRID, linewidth=0.6, zorder=1)
+    chosen = sizes.index[0] if community is None else community
+    members = [n for n in frame.loc[frame["community"] == chosen, "node"]]
+    if not members:
+        raise ValueError(f"community {chosen} has no members in the graph")
+    undirected = graph.subgraph(members).to_undirected() if graph.is_directed() \
+        else graph.subgraph(members)
+    if len(members) > max_nodes:
+        keep = sorted(undirected.degree, key=lambda item: -item[1])[:max_nodes]
+        undirected = undirected.subgraph([n for n, _ in keep])
+    sub = graph.subgraph(undirected.nodes())
+    position = nx.spring_layout(undirected, seed=0, k=1.6 / max(len(undirected), 1) ** 0.5)
+
+    drawing = axes[1]
+    drawing.set_axis_off()
+    for u, v, data in (sub.edges(data=True)):
+        style = EDGE_STYLES.get(data.get("edge_type", "unknown"), "-")
+        drawing.plot(*zip(position[u], position[v]), color=GRID, linewidth=0.7,
+                     linestyle=style, zorder=1)
+
+    changed = {n for n in sub if int(sub.nodes[n].get("regulated", 0) or 0) != 0}
     for node in sub.nodes():
-        axes[1].scatter(*position[node], s=42, zorder=2,
+        direction = int(sub.nodes[node].get("regulated", 0) or 0)
+        ring = UP if direction > 0 else DOWN if direction < 0 else SURFACE
+        drawing.scatter(*position[node], s=70 if direction else 42, zorder=2,
                         color=LAYER_COLORS.get(_layer(graph, node), _UNKNOWN),
-                        edgecolors=SURFACE, linewidths=0.8)
-    axes[1].set_title(f"community {biggest}, the largest ({sizes.iloc[0]} molecules)",
+                        edgecolors=ring, linewidths=1.8 if direction else 0.8,
+                        marker="s" if _layer(graph, node) == "Reactions" else "o")
+
+    ranked = sorted(undirected.degree, key=lambda item: (item[0] not in changed, -item[1]))
+    for node, _ in ranked[:max(label_top, 0)]:
+        data = graph.nodes[node]
+        text = _label(data.get("name"), node, limit=26, symbol=data.get("symbol"))
+        drawing.annotate(text, position[node], xytext=(4, 4), textcoords="offset points",
+                         fontsize=7.5, color=INK, zorder=3,
+                         bbox=dict(boxstyle="round,pad=0.15", facecolor=SURFACE,
+                                   edgecolor="none", alpha=0.8))
+
+    from matplotlib.lines import Line2D
+    present = order_layers({_layer(graph, n) for n in sub})
+    handles = [Line2D([], [], marker="s" if layer == "Reactions" else "o", linestyle="",
+                      color=LAYER_COLORS.get(layer, _UNKNOWN), label=layer)
+               for layer in present]
+    handles += [Line2D([], [], marker="o", linestyle="", markerfacecolor=SURFACE,
+                       markeredgecolor=colour, markeredgewidth=1.8, label=label)
+                for colour, label in ((UP, "increased"), (DOWN, "decreased"))]
+    handles += [Line2D([], [], color=MUTED, linestyle="-", label="mass flow, translation"),
+                Line2D([], [], color=MUTED, linestyle="--", label="catalysis, regulation"),
+                Line2D([], [], color=MUTED, linestyle=":", label="allosteric, interaction")]
+    drawing.legend(handles=handles, frameon=False, fontsize=7.5, labelcolor=SECONDARY,
+                   loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    shown_note = "" if sub.number_of_nodes() == len(members) else \
+        f", {sub.number_of_nodes()} best connected shown"
+    drawing.set_title(f"community {chosen} ({len(members)} molecules{shown_note}, "
+                      f"{len(changed)} changed)",
                       fontsize=9.5, color=SECONDARY, loc="left")
 
     figure.suptitle(title, x=0.01, ha="left", fontsize=12.5, fontweight="bold", color=INK)

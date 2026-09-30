@@ -1,26 +1,12 @@
-"""Figures that show the trans-omic network as a trans-omic network.
+"""Figures of the trans-omic network.
 
-Three views, each matching a published convention:
-
-* :func:`plot_transomic_network` -- the 2.5D stacked-layer view popularised by
-  transomics2cytoscape: layers drawn as stacked planes in an isometric
-  projection, inter-layer edges running between them, edge style carrying the
-  relationship and edge colour carrying its sign.
-* :func:`plot_regulation_axes` -- per-pathway bars of activation and inhibition
-  split by regulation axis, with the controversial fraction marked; the summary
-  figure of Kokaji et al.
-* :func:`plot_layer_connectivity` -- the layer x layer edge-count heatmap that
-  shows at a glance how much of the network is genuinely cross-layer.
-
-References
-----------
-Nishida K, Maruyama J, Kaizu K, et al. Transomics2cytoscape: an automated
-software for interpretable 2.5-dimensional visualization of trans-omic networks.
-*npj Systems Biology and Applications* 10:19, 2024.
-
-Egami R, et al. Trans-omic analysis reveals obesity-associated dysregulation of
-inter-organ metabolic cycles between the liver and skeletal muscle. *iScience*
-24(3):102217, 2021.
+* :func:`plot_transomic_network`: the layers as stacked planes, with edges
+  between them; line style shows the edge type and colour its sign.
+* :func:`plot_regulation_axes`: per pathway, the reactions each regulation
+  axis activates or inhibits, and the fraction that are controversial.
+* :func:`plot_layer_connectivity`: a heatmap of edge counts between layers.
+* :func:`transomic_backbone`: selects a readable part of a large network to
+  draw.
 """
 
 import logging
@@ -132,51 +118,38 @@ def transomic_backbone(
     max_reactions_per_enzyme: int = 3,
     max_signalling_per_enzyme: int = 2,
 ):
-    """Select a readable signal -> gene -> protein -> reaction -> metabolite slice.
+    """Select a readable part of a large network, built around reactions.
 
-    Trimming a trans-omic network by degree keeps the interactome hubs --
-    ribosomal proteins, splicing factors -- and drops every reaction, because a
-    reaction has a handful of neighbours and a hub has hundreds. The figure
-    then shows a protein cloud and no trans-omic structure at all.
-
-    This selects around the *reactions* instead, since the reaction is where
-    the layers converge. Reactions are ranked by regulatory evidence, with the
-    strongest weight on convergence -- a regulated enzyme *and* a regulated
-    metabolite meeting at one reaction -- and each keeps its enzymes, those
-    enzymes' genes, and its metabolites, regulated ones first.
+    Keeping the highest-degree nodes of an organism-wide network keeps
+    interactome hubs and drops every reaction. This instead ranks reactions by
+    how much regulation meets there (a changed enzyme and a changed metabolite
+    count most) and keeps each reaction with its enzymes, their genes, and its
+    metabolites.
 
     Parameters
     ----------
     graph : networkx.MultiDiGraph
-        A mapped trans-omic network (``regulated`` on measured nodes).
+        A mapped trans-omic network.
     max_reactions : int
         Reactions to keep.
     max_enzymes_per_reaction, max_metabolites_per_reaction : int
-        Caps that keep promiscuous reactions from dominating.
+        Limits per reaction.
     include_currency : bool
-        Keep ATP, NAD(H), water and the like. Off by default: they touch
-        hundreds of reactions and would pull every reaction into one knot.
-    max_signalling_per_enzyme : int
-        Modification sites or kinases to draw above each selected enzyme, when
-        the network has a Signaling layer. Regulated ones are kept first. Set to
-        0 to leave the layer out of the figure.
-    max_reactions_per_enzyme : int
-        Reactions to keep per catalysing enzyme set. A promiscuous family --
-        the glutathione S-transferases, with a separate KEGG reaction per
-        xenobiotic they conjugate -- otherwise fills the figure with fifteen
-        versions of one finding and hides every other regulated reaction.
+        Keep currency metabolites such as ATP and water (off by default).
     metabolic_effectors_only : bool
-        Draw allosteric regulators only when the organism's own network makes
-        or consumes them (:func:`~transnet.biology.schema.metabolic_pool`).
-        BRENDA records every effector an enzyme was tested with, laboratory
-        reagents included, and those compounds otherwise decide which
-        reactions the figure shows. The edges stay in the network and in every
-        table; this governs the figure only.
+        Draw only allosteric regulators that occur in the organism's
+        metabolism, not laboratory compounds recorded by BRENDA. Affects the
+        figure only.
+    max_reactions_per_enzyme : int
+        Reactions to keep per enzyme, so one enzyme family with many similar
+        reactions cannot fill the figure.
+    max_signalling_per_enzyme : int
+        Signaling nodes to draw above each enzyme; 0 leaves the layer out.
 
     Returns
     -------
     networkx.MultiDiGraph
-        The selected nodes with only cross-layer edges.
+        The selected nodes, with the edges between layers.
     """
     from transnet.biology.schema import CURRENCY_METABOLITES
 
@@ -349,46 +322,35 @@ def plot_transomic_network(
     seed: int = 0,
     layout: str = "auto",
 ):
-    """Draw the network as stacked layer planes in a 2.5D projection.
+    """Draw the network as stacked layer planes.
 
-    Each layer is laid out within its own plane and the planes are stacked in
-    regulatory order, so inter-layer edges read as vertical regulatory flow and
-    intra-layer edges stay horizontal.  This is the transomics2cytoscape
-    convention, which exists because a force-directed layout of a multi-layer
-    network hides the very structure that makes it multi-layer.
-
-    Large networks should be reduced first with :func:`transomic_backbone`;
-    trimming by degree keeps interactome hubs and drops the reactions.
+    Each layer is laid out in its own plane, and the planes are stacked in the
+    order regulation flows, so edges between layers run vertically. Reduce large
+    networks first with :func:`transomic_backbone`.
 
     Parameters
     ----------
     graph : networkx.Graph
-        A trans-omic network.  Layers absent from the graph are skipped, so
-        this works unchanged on a network with or without a Signaling layer.
+        A trans-omic network. Absent layers are skipped.
     layer_order : sequence of str, optional
-        Top-to-bottom order.  Defaults to
-        :data:`~transnet.biology.schema.DISPLAY_ORDER`: Transcriptome,
-        Proteome, Reactions, Metabolome.
+        Top-to-bottom order. Default: ``DISPLAY_ORDER``.
     node_color_by : {"regulated", "layer"}
-        ``"regulated"`` colours nodes by measured direction (red up, blue down,
-        grey unchanged) and falls back to layer colour where nothing was
-        measured; ``"layer"`` colours everything by layer.
+        Colour by measured direction (red up, blue down, grey unchanged) or by
+        layer.
     label_top_n : int
-        Label this many highest-degree nodes per layer.
+        Label this many of the best-connected nodes per layer.
     layer_spacing : float
         Vertical distance between planes.
     skew : float
-        Isometric shear.  0 gives flat stacked rows; larger values tilt the
-        planes for a more three-dimensional look.
+        Tilt of the planes; 0 draws flat rows.
     figsize : tuple
     title : str
     seed : int
-        Layout seed, so the figure is reproducible.
+        Layout seed.
     layout : {"auto", "aligned", "spring"}
-        ``"aligned"`` places every node over or under the reactions it
-        connects to, so cross-layer edges run vertically. ``"spring"`` lays
-        each plane out independently. ``"auto"`` aligns whenever a Reactions
-        layer is present.
+        ``"aligned"`` places nodes above or below the reactions they connect
+        to; ``"spring"`` lays out each plane independently; ``"auto"`` aligns
+        when there is a Reactions layer.
 
     Returns
     -------
