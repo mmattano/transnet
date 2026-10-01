@@ -1,0 +1,130 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transnet"
+version = "0.2.0"
+description = "Trans-omic network reconstruction and analysis"
+readme = "README.md"
+authors = [
+    {name = "Matthias Anagho-Mattanovich", email = "matthias.mattanovich@sund.ku.dk"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.20.0,<2.0",  # Pin to 1.x for compatibility
+    "pandas>=1.2.0",
+    "networkx>=2.5",
+    "matplotlib>=3.3.0",
+    "scipy>=1.6.0",
+    "scikit-learn>=0.24.0",
+    "statsmodels>=0.12.0",
+    "bioservices>=1.9.0",
+    "mygene>=3.2.0",
+    "requests>=2.25.0",
+    "zeep>=4.0.0",
+    "biopython>=1.78",
+    "pyensembl>=2.0.0",
+    "pyreadr>=0.4.7",    # MoTrPAC distributes its data as .rda
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.10",
+    "black>=21.0",
+    "flake8>=3.8",
+    "python-dotenv>=0.5.1",
+]
+viz = [
+    "seaborn>=0.11.0",
+    "plotly>=5.0.0",
+]
+cache = [
+    "pyarrow>=8.0.0",  # parquet support for faster/smaller cache files
+]
+docs = [
+    "Sphinx>=4.3.2",
+    "myst-nb>=1.0",      # renders the notebooks, executing them at build time
+    "jupytext>=1.15",    # reads notebooks/*.py as notebooks
+]
+notebooks = [
+    "jupytext>=1.15",
+    "jupyterlab>=4.0",
+]
+all = [
+    "transnet[dev,viz,docs,cache,notebooks]",
+]
+
+[project.urls]
+Homepage = "https://github.com/mmattano/transnet"
+Documentation = "https://mmattano.github.io/transnet/"
+Repository = "https://github.com/mmattano/transnet"
+Issues = "https://github.com/mmattano/transnet/issues"
+
+[tool.setuptools.package-data]
+"transnet.data" = ["example/*.csv"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["transnet*"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Tests that hit live databases are excluded by default so the suite runs
+# offline and fast; run them with `pytest -m network`.
+addopts = "-v --tb=short -m 'not network'"
+markers = [
+    "network: requires live access to an external database (KEGG, UniProt, ...)",
+    "slow: runs a whole notebook end to end (about a minute for all of them)",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.coverage.run]
+source = ["transnet"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

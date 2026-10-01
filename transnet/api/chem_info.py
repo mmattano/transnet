@@ -12,7 +12,8 @@ import requests
 def chemical_info_converter(input_ids):
     """
     Converts a list of chemical identifiers to a pandas dataframe with the following columns:
-    chebi_ids: CHEBI identifiers
+    chebi_ids: CHEBI identifier (the first, when several are known)
+    chebi_ids_all: every CHEBI identifier known for the compound, as a list
     smiles: SMILES strings
     inchi: InChI strings
     inchikeys: InChIKeys
@@ -28,16 +29,21 @@ def chemical_info_converter(input_ids):
     -------
     pandas.DataFrame
         Dataframe with the following columns:
-        chebi_ids: CHEBI identifiers
+        chebi_ids: CHEBI identifier (the first, when several are known)
+        chebi_ids_all: every CHEBI identifier for the compound, as a list.
+            Prefer this when translating onward to another database: the
+            neutral and zwitterionic forms are separate CHEBI entries and
+            only some are cross-referenced.
         smiles: SMILES strings
         inchi: InChI strings
         inchikeys: InChIKeys
         pubchem_ids: PubChem identifiers
     """
 
-    MAX_SIMULTANEOUS_REQUESTS = 1000
+    MAX_SIMULTANEOUS_REQUESTS = 100
 
     chebi_ids = []
+    chebi_ids_all = []
     smiles = []
     inchi = []
     inchikeys = []
@@ -45,7 +51,7 @@ def chemical_info_converter(input_ids):
 
     for i in range(0, len(input_ids), MAX_SIMULTANEOUS_REQUESTS):
         start = i
-        end = i + 1000
+        end = i + MAX_SIMULTANEOUS_REQUESTS
         if end > len(input_ids):
             end = len(input_ids)
         params = {
@@ -56,36 +62,26 @@ def chemical_info_converter(input_ids):
         con = res.json()
         for j in con:
             try:
-                if isinstance(j["chebi"], list):
-                    chebi_ids.append(j["chebi"][0]["id"])
-                    try:
-                        smiles.append(j["chebi"][0]["smiles"])
-                    except KeyError:
-                        smiles.append(None)
-                    try:
-                        inchi.append(j["chebi"][0]["inchi"])
-                    except KeyError:
-                        inchi.append(None)
-                    try:
-                        inchikeys.append(j["chebi"][0]["inchikey"])
-                    except KeyError:
-                        inchikeys.append(None)
-                else:
-                    chebi_ids.append(j["chebi"]["id"])
-                    try:
-                        smiles.append(j["chebi"]["smiles"])
-                    except KeyError:
-                        smiles.append(None)
-                    try:
-                        inchi.append(j["chebi"]["inchi"])
-                    except KeyError:
-                        inchi.append(None)
-                    try:
-                        inchikeys.append(j["chebi"]["inchikey"])
-                    except KeyError:
-                        inchikeys.append(None)
+                # mychem often returns several ChEBI entries for one compound
+                # -- typically the neutral species and its zwitterion. Only
+                # some of them are cross-referenced by KEGG, so keeping just
+                # the first silently loses the mapping for the rest: on a
+                # 171-metabolite mouse panel that was 106 compounds resolved
+                # instead of 144. Every id is kept in `chebi_ids_all`, with
+                # the first still in `chebi_ids` for callers that want one.
+                entries = j["chebi"] if isinstance(j["chebi"], list) else [j["chebi"]]
+                ids = [e["id"] for e in entries if isinstance(e, dict) and "id" in e]
+                if not ids:
+                    raise KeyError("chebi")
+                chebi_ids.append(ids[0])
+                chebi_ids_all.append(ids)
+                first = entries[0] if isinstance(entries[0], dict) else {}
+                smiles.append(first.get("smiles"))
+                inchi.append(first.get("inchi"))
+                inchikeys.append(first.get("inchikey"))
             except KeyError:
                 chebi_ids.append(None)
+                chebi_ids_all.append([])
                 smiles.append(None)
                 inchi.append(None)
                 inchikeys.append(None)
@@ -100,6 +96,7 @@ def chemical_info_converter(input_ids):
     chem_info_df = pd.DataFrame(
         {
             "chebi_ids": chebi_ids,
+            "chebi_ids_all": chebi_ids_all,
             "smiles": smiles,
             "inchi": inchi,
             "inchikeys": inchikeys,

@@ -1,7 +1,6 @@
-"""STRING API
-"""
-# Cheated in string_map_identifiers by just skipping the html part
-# talk to string people about how to avoid that
+"""STRING API"""
+
+from collections import defaultdict
 
 __all__ = [
     "string_map_identifiers",
@@ -13,61 +12,40 @@ __all__ = [
 import requests
 import time
 
+_STRING_API = "https://string-db.org/api"
+
 
 def string_map_identifiers(protein_list: list, species: str = "9606") -> dict:
-    """
-    Find the STRING identifiers for a given gene.
+    """Map UniProt / gene-name identifiers to STRING ENSP identifiers.
 
     Parameters
     ----------
     protein_list : list
-        List of protein names.
+        List of protein identifiers (UniProt IDs or gene symbols).
     species : str
-        Species identifier.
-    
+        NCBI species taxon ID (e.g. ``"10090"`` for mouse).
+
     Returns
     -------
-    string_map : dict
-        Dictionary with STRING identifiers.
+    dict
+        ``{input_id: string_ensp_id}``
     """
-
-    string_api_url = "https://version-11-5.string-db.org/api"
-    output_format = "tsv-no-header"
-    method = "get_string_ids"
-
-    ## Set parameters
-
+    request_url = "/".join([_STRING_API, "tsv-no-header", "get_string_ids"])
     params = {
-        "identifiers": "\r".join(protein_list),  # your protein list
-        "species": species,  # species NCBI identifier
-        "limit": 1,  # only one (best) identifier per input protein
-        "echo_query": 1,  # see your input identifiers in the output
-        # "caller_identity" : "www.awesome_app.org" # your app name
+        "identifiers": "\r".join(protein_list),
+        "species": species,
+        "limit": 1,
+        "echo_query": 1,
     }
-
-    ## Construct URL
-
-    request_url = "/".join([string_api_url, output_format, method])
-
-    ## Call STRING
-
-    results = requests.post(request_url, data=params)
-
-    ## Wait 1 second to not risk overloading the server
-
+    results = requests.post(request_url, data=params, timeout=120)
     time.sleep(1)
-
-    ## Read and parse the results
 
     string_map = {}
     for line in results.text.strip().split("\n"):
-        l = line.split("\t")
-        try:
-            input_identifier, string_identifier = l[0], l[2]
-            # print("Input:", input_identifier, "STRING:", string_identifier, sep="\t")
-            string_map[input_identifier] = string_identifier
-        except IndexError:
+        parts = line.split("\t")
+        if len(parts) < 3:
             continue
+        string_map[parts[0]] = parts[2]
 
     return string_map
 
@@ -75,68 +53,50 @@ def string_map_identifiers(protein_list: list, species: str = "9606") -> dict:
 def string_get_interactions(
     protein_list: list, species: str = "9606", cutoff_score: int = 700
 ) -> dict:
-    """
-    Find the STRING identifiers for a given gene.
+    """Fetch interaction partners for a list of STRING ENSP identifiers.
 
     Parameters
     ----------
     protein_list : list
-        List of protein names.
+        STRING ENSP identifiers (output of :func:`string_map_identifiers`).
     species : str
-        Species identifier.
-    
+        NCBI species taxon ID.
+    cutoff_score : int
+        Minimum combined interaction score (0–1000).
+
     Returns
     -------
-    interactions_dict : dict
-        Dictionary with STRING identifiers of interaction partners.
+    dict
+        ``{ensp_id: [partner_ensp_id, ...]}``
     """
-
-    string_api_url = "https://version-11-5.string-db.org/api"
-    output_format = "tsv-no-header"
-    method = "interaction_partners"
-
-    ## Construct the request
-
-    request_url = "/".join([string_api_url, output_format, method])
-
-    ## Set parameters
-
+    request_url = "/".join(
+        [_STRING_API, "tsv-no-header", "interaction_partners"]
+    )
     params = {
-        "identifiers": "%0d".join(protein_list),  # your protein
-        "species": species,  # species NCBI identifier
-        # "limit" : 5,
-        # "caller_identity" : "www.awesome_app.org" # your app name
+        "identifiers": "\r".join(protein_list),
+        "species": species,
         "required_score": cutoff_score,
     }
-
-    ## Call STRING
-
-    response = requests.post(request_url, data=params)
-
-    ## Wait 1 second to not risk overloading the server
-
+    response = requests.post(request_url, data=params, timeout=120)
     time.sleep(1)
 
-    ## Read and parse the results
-
-    from collections import defaultdict
+    if not response.ok:
+        raise RuntimeError(
+            f"STRING API error {response.status_code}: "
+            f"{response.text[:200]}"
+        )
 
     interactions_dict = defaultdict(list)
-
     for line in response.text.strip().split("\n"):
-
-        l = line.strip().split("\t")
-        query_ensp = l[0]
-        # query_name = l[2]
-        partner_ensp = l[1]
-        # partner_name = l[3]
-        # combined_score = l[5]
-
-        interactions_dict[query_ensp].append(partner_ensp)
-
-        ## print
-
-        # print("\t".join([query_ensp, query_name, partner_ensp, partner_name, combined_score]))
+        parts = line.strip().split("\t")
+        if len(parts) < 2:
+            continue
+        # Guard: STRING returns JSON error payloads on bad requests
+        if parts[0].strip().lower() in ("error", "errormessage"):
+            raise RuntimeError(
+                f"STRING API returned error: {response.text[:200]}"
+            )
+        interactions_dict[parts[0]].append(parts[1])
 
     return interactions_dict
 
@@ -148,45 +108,28 @@ def reverse_string_mapping(mapping_dict: dict, string_identifier: str):
     return key
 
 
-def translate_string_dict(
-    mapping_dict: dict, interactions_dict: dict,
-):
-    """
-    Translate STRING identifiers to gene names.
+def translate_string_dict(mapping_dict: dict, interactions_dict: dict) -> dict:
+    """Translate STRING ENSP identifiers back to input identifiers.
 
     Parameters
     ----------
     mapping_dict : dict
-        Dictionary with STRING identifier mapping.
+        Output of :func:`string_map_identifiers`.
     interactions_dict : dict
-        Dictionary with STRING identifiers of interaction partners.
+        Output of :func:`string_get_interactions`.
 
     Returns
     -------
-    translated_dict : dict
-        Dictionary with gene names.
+    dict
+        ``{input_id: [partner_input_id, ...]}``
     """
-
+    reverse = {v: k for k, v in mapping_dict.items()}
     translated_dict = {}
-    for key, value in interactions_dict.items():
-        try:
-            center_node = reverse_string_mapping(
-                mapping_dict=mapping_dict, string_identifier=key
-            )
-
-            interaction_nodes = []
-            for node in value:
-                try:
-                    interaction_nodes.append(
-                        reverse_string_mapping(
-                            mapping_dict=mapping_dict, string_identifier=node
-                        )
-                    )
-                except ValueError:
-                    continue
-            translated_dict[center_node] = interaction_nodes
-        except ValueError:
-            print("Did not work for", key)
+    for ensp_center, partners in interactions_dict.items():
+        center_node = reverse.get(ensp_center)
+        if center_node is None:
             continue
-
+        translated_dict[center_node] = [
+            reverse[p] for p in partners if p in reverse
+        ]
     return translated_dict
