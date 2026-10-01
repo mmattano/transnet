@@ -10,15 +10,12 @@
 # transcriptome covers 14,292 genes and the metabolome 162 compounds, each with
 # the authors' own fold changes, q-values and half-response times. The
 # measurements were published by Kokaji *et al.*, *Science Signaling*
-# 13(660):eaaz1236, 2020. They are downloaded when the notebook runs and are
-# never redistributed.
+# 13(660):eaaz1236, 2020, and are downloaded when the notebook runs.
 #
-# The panel study (`obese_liver.py`) could check three claims of this paper only
-# partly, on 19 genes at one time point. Here they are tested on the data they
-# were made from. Two analyses appear only in this study: the
-# transcription-factor inference is compared with the authors' own inference on
-# the same data, and measured enzyme affinities show whether a metabolite's
-# change can matter to its enzyme at all.
+# The panel study (`obese_liver.py`) looks at the same comparison on 19 genes at
+# one time point; this notebook covers the whole liver over four hours. One
+# analysis appears only here: measured enzyme affinities show whether a
+# metabolite's change can matter to its enzyme at all.
 
 # %%
 import json
@@ -83,9 +80,8 @@ plt.show()
 #
 # No statistics are recomputed. The supplement gives a fold change, p-value
 # and q-value per time point and genotype, so each contrast is read from it and
-# the ratio converted to log2. The analysis differs from the paper only in what
-# is done with the network, not in the statistics. The main contrast is 240
-# minutes against 0 minutes.
+# the ratio converted to log2. The main contrast is 240 minutes against 0
+# minutes.
 #
 # The metabolites come with KEGG compound ids, which the network also uses, so
 # no name matching is needed.
@@ -109,8 +105,7 @@ pd.DataFrame([
 # %% [markdown]
 # The first result is visible before any network is used: at 240 minutes more
 # metabolites change in wild-type than in obese liver, and more genes change in
-# obese than in wild-type liver. This is the paper's main finding, and it is
-# already in the raw numbers.
+# obese than in wild-type liver.
 #
 # ## The response over time
 #
@@ -237,10 +232,9 @@ axes = pd.DataFrame(rows).set_index("genotype")
 axes
 
 # %% [markdown]
-# This is the claim the paper is built on: healthy liver responds to glucose
-# through its metabolites, obese liver through gene expression. The 19-gene
-# panel could only test it partly. Here the whole liver is available and the two
-# axes can be counted in each genotype.
+# Healthy liver responds to glucose mainly through its metabolites, obese liver
+# mainly through gene expression. Over the whole liver, the two axes can be
+# counted in each genotype.
 
 # %%
 from transnet.visualization import plot_axis_composition
@@ -431,19 +425,10 @@ print(f"{len(regulated_with_kinetics)} regulated reactions have a measured "
 regulated_with_kinetics.sort_values("shift", key=abs, ascending=False).head(10)
 
 # %% [markdown]
-# ## Transcription factors, against a published inference
+# ## Transcription factors
 #
-# Elsewhere in this documentation there is nothing to check the
-# transcription-factor ranking against. Here the authors inferred factors from
-# the same transcriptome by motif enrichment over gene clusters (Table S7), so
-# the two inferences can be compared.
-#
-# The methods differ. Motif enrichment asks which DNA sequence motifs are
-# over-represented in the promoters of a gene cluster.
 # `transcription_factor_activity` asks which factors' ChIP-Atlas target genes
-# are over-represented among the genes that changed. When two different
-# methods agree on the same data, that agreement is stronger evidence than
-# either result alone.
+# are over-represented among the genes that changed.
 
 # %%
 activity = {}
@@ -465,40 +450,13 @@ tf_figure = plot_tf_activity(activity["WT"],
                              title="Transcription factors, wild-type liver")
 plt.show()
 
-# %%
-motifs_published = load_kokaji_table("S7", sheet="Motif")
-enriched_columns = [c for c in motifs_published.columns if "isEnrichedMotif" in c]
-enriched_mask = motifs_published[enriched_columns].apply(
-    pd.to_numeric, errors="coerce").fillna(0).gt(0).any(axis=1)
-their_factors = set(motifs_published.loc[enriched_mask, "Name"].astype(str).str.upper())
-print(f"the authors call {len(their_factors)} motifs enriched in at least one "
-      f"gene cluster, out of {len(motifs_published)} tested")
-
-ours = activity["WT"]
-ours_implicated = set(ours.loc[ours["q_value"] <= 0.05, "name"]
-                      .astype(str).str.upper())
-ours_tested = set(ours["name"].astype(str).str.upper())
-shared = their_factors & ours_tested
-
-pd.DataFrame([
-    {"in both analyses": len(shared),
-     "they call enriched, we test": len(their_factors & ours_tested),
-     "we implicate and they do too": len(ours_implicated & their_factors),
-     "we implicate, they do not": len(ours_implicated - their_factors),
-     "they implicate, we do not": len(their_factors & ours_tested
-                                      - ours_implicated)}
-])
-
-# %%
-sorted(ours_implicated & their_factors)
-
 # %% [markdown]
-# ## Timing, against the authors' own half-response times
+# ## Response timing
 #
 # The other studies compute half-response times with TransNet. This supplement
 # provides the authors' own, per genotype and for both layers, so the question
-# of whether well-connected molecules respond first can be asked with the
-# paper's numbers.
+# of whether well-connected molecules respond first can be asked with those
+# values.
 
 # %%
 timing = []
@@ -711,36 +669,6 @@ from transnet.visualization import plot_condition_comparison
 
 comparison_figure = plot_condition_comparison(comparison, "WT", "ob/ob")
 plt.show()
-
-# %% [markdown]
-# ## The published claims, checked
-#
-# The three claims from this paper that the 19-gene panel could only partly
-# test, now tested on the data they were made from.
-
-# %%
-wt, obese = axes.loc["WT"], axes.loc["ob/ob"]
-metabolite_share = {g: (row["metabolite only"] + row["both"]) / max(row["regulated"], 1)
-                    for g, row in axes.iterrows()}
-enzyme_share = {g: (row["enzyme only"] + row["both"]) / max(row["regulated"], 1)
-                for g, row in axes.iterrows()}
-
-claims = pd.DataFrame([
-    {"claim": "Healthy hepatic glucose responses rely on regulation by metabolites",
-     "evidence": f"{metabolite_share['WT']:.0%} of regulated reactions in WT "
-                 f"carry a changed metabolite"},
-    {"claim": "In ob/ob liver, regulation by metabolites is lost",
-     "evidence": f"{metabolite_share['ob/ob']:.0%} in ob/ob against "
-                 f"{metabolite_share['WT']:.0%} in WT; "
-                 f"{obese['metabolite only'] + obese['both']} reactions against "
-                 f"{wt['metabolite only'] + wt['both']}"},
-    {"claim": "ob/ob glucose responses depend instead on slow gene expression",
-     "evidence": f"{enzyme_share['ob/ob']:.0%} of ob/ob regulated reactions "
-                 f"carry a changed transcript against {enzyme_share['WT']:.0%} "
-                 f"in WT, over {len(contrasts['ob/ob']['Transcriptome']):,} genes"},
-])
-claims.to_csv(OUT / "published_claims.csv", index=False)
-claims
 
 # %% [markdown]
 # ## Figures and exports

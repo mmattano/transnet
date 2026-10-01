@@ -325,43 +325,6 @@ with the network and the number of changed molecules per layer fixed, gives 19
 on average (z = +4.4, p = 0.015). The layers converge far more than chance
 would produce, which is what the regulation-axis results above rely on.
 
-Compared with the published analysis
-------------------------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 44 56
-
-   * - The paper concluded
-     - What the network reading shows
-   * - Three metabolic states: uninduced (0 h), active lipolysis (4 h),
-       sustained induction (24 h)
-     - clustering the metabolite trajectories over all seven timepoints
-       separates three shapes; 88 of 171 metabolites change across the course
-       (one-way ANOVA, BH-corrected), 70 of them monotonically
-   * - The metabolome moves before the transcriptome and proteome
-     - the metabolite response is already significant at 4 h while the protein
-       changes concentrate at 24 h
-   * - Lipid-droplet genes (*Sqle*, *Fdft1*) fall as transcripts at 4 h while
-       their proteins rise
-     - not reproduced at 24 h: *Sqle* falls in both layers (transcript-only
-       change, protein down −0.84 log2, not significant), and *Fdft1* is not
-       among the matched proteins. The paper's observation is at 4 h, this
-       contrast is 24 h.
-   * - Upper glycolysis (*Pfkl*, *Pfkp*) down, lower glycolysis (*Pklr*) up
-     - partly: *Hk2*, *Pfkl* and *Pkm* transcripts fall, but only Hk2 protein
-       follows; *Pklr* is not among the genes measured in both layers
-   * - Trans-omics "can highlight specific elements that might otherwise be
-       overlooked", complementing the other four methods
-     - 154 controversial reactions, each naming the enzymes and the metabolites
-       pulling against each other
-
-The paper reached its trans-omic observations, such as the Rock2/protamine link
-and the split in glycolysis, by reading a network by hand. Here the comparable
-statements come out of the catalogue as ordinary output, with the regulation
-axis of each reaction and the transcript-protein test attached, and they show
-where the 24 h contrast differs from the 4 h one the paper describes.
-
 What does not work on this data
 -------------------------------
 
@@ -380,8 +343,7 @@ What does not work on this data
 * **Response time does not follow connectivity** (p = 0.227, n = 118).
 * **Transcription-factor inference is too permissive here**: 225 of 703 factors
   reach q <= 0.05. With 6,882 responding transcripts and thousands of ChIP-Atlas
-  targets per factor, the ranking is informative but the count is not. See
-  :doc:`liver_timecourse` for the same inference compared with a published one.
+  targets per factor, the ranking is informative but the count is not.
 
   .. figure:: figures/brown_adipocytes/tf_activity.png
      :width: 90%
@@ -389,5 +351,5 @@ What does not work on this data
 .. seealso::
 
    :doc:`motrpac_study` runs the same catalogue across six tissues.
-   :doc:`obese_liver_panel` and :doc:`liver_timecourse` check it against published
-   conclusions.
+   :doc:`obese_liver_panel` and :doc:`liver_timecourse` apply it to lean and
+   obese mouse liver.

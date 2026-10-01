@@ -55,8 +55,7 @@ make studies
 | `liver_timecourse` | lean and obese mouse liver after glucose, genome-wide over four hours (Kokaji *et al.* 2020), fetched at run time |
 
 Each writes CSVs, figures and network exports under `data/<study>_results/`. The narrative
-versions, with the figures and the comparison against each paper's own
-conclusions, are in `docs/source/`.
+versions, with the figures, are in `docs/source/`.
 
 ## Conventions
 

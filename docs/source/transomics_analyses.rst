@@ -718,7 +718,7 @@ significance and shows the direction of their targets.
    genome-wide. A targeted gene panel carries too few targets per factor to
    test, and ChIP-Atlas coverage varies sharply by organism.
 :Example: ``notebooks/walkthroughs/transcription_factors.py``;
-   :doc:`liver_timecourse` scores the inference against a published one.
+   :doc:`liver_timecourse`
 :Reference: :ref:`Kokaji et al. 2022 <ref-kokaji2022>`,
    :ref:`Maehara et al. 2025 <ref-maehara2025>`
 

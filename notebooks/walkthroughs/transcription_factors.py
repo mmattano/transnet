@@ -126,10 +126,8 @@ for threshold in (None, 100, 500):
 #   MoTrPAC tissues implicate none.
 #
 # Both limits come from the annotation, not from the method, so report the
-# coverage alongside any result. The liver time-course study
-# (`notebooks/studies/liver_timecourse.py`) compares this inference with a
-# published one on the same data, which is the only way to check whether the
-# ranking is right.
+# coverage alongside any result, and treat the ranking as a list of factors to
+# check rather than as an answer.
 #
 # The live ChIP-Atlas calls that build these edges, `get_chip_tf_targets` and
 # `list_chip_tfs`, are in `external_annotation.py`, which needs the network.

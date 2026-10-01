@@ -7,8 +7,9 @@ Obese liver after a glucose load: a 19-gene metabolic panel
    :widths: 22 78
 
    * - **Question**
-     - Does a trans-omic analysis answer questions that a separate analysis of
-       each layer cannot, and are its answers right?
+     - Which reactions change in fasting obese liver, and through which
+       regulatory mechanism? What can a trans-omic analysis say about a small
+       targeted panel that separate lists of changed molecules cannot?
    * - **System**
      - Liver of wild-type and leptin-deficient obese (ob/ob) mice, fasted and
        4 h after an oral glucose load; 11-12 mice per group
@@ -29,17 +30,6 @@ This page is the summary. Run the analysis with:
 .. code-block:: bash
 
     python notebooks/studies/obese_liver.py
-
-.. admonition:: Provenance of the data and of these figures
-
-   The measurements are those of Uematsu *et al.*, published with their OMELET
-   code under GPL-3.0. TransNet is MIT-licensed and **never redistributes
-   them**: the script downloads the files when it runs, into a directory that is
-   not part of this repository.
-
-   The figures on this page are TransNet's own: fold changes, tests and
-   intervals computed here from those measurements. None of the authors' code
-   is run, and none of their data files are reproduced.
 
 The data
 --------
@@ -69,7 +59,7 @@ else; in the glucose response of obese liver, nothing changes.
 
 That is all that separate lists of changed molecules can say. They cannot say
 which reactions are affected, through which mechanism, or whether the layers
-agree. Those are the questions the published papers ask.
+agree.
 
 What the trans-omic network says
 --------------------------------
@@ -193,83 +183,35 @@ number of changes per layer fixed, gives 6.3 on average (z = +1.9, p = 0.050).
 That is only just significant; the genome-wide studies show much stronger
 convergence.
 
-The published claims, checked
------------------------------
+Are the protein changes transcriptional?
+----------------------------------------
 
-.. list-table::
-   :header-rows: 1
-   :widths: 34 16 50
+Most enzyme-axis reactions change through the amount of protein: 10 of the 44
+have a transcript changing the same way, and 34 change at the protein level
+only. Tested directly (protein change minus transcript change, with standard
+errors), Gpi1, Fbp1, Eno1 and Ldha changed significantly more than their
+transcripts, while Pklr and Gpd1 changed through their transcripts. This test
+does not depend on a significance cut-off.
 
-   * - Claim
-     - Verdict
-     - TransNet result
-   * - Healthy hepatic glucose responses rely on regulation by metabolites
-       (:ref:`Kokaji et al. 2020 <ref-kokaji2020>`)
-     - reproduced
-     - 6 reactions regulated in the lean glucose response, all through
-       metabolites
-   * - In ob/ob liver, regulation by metabolites is lost
-       (:ref:`Kokaji et al. 2020 <ref-kokaji2020>`)
-     - reproduced, weakly
-     - 0 metabolite-axis reactions against 6 in lean liver; weak support,
-       because nothing changes in any layer in the obese glucose response
-   * - ob/ob glucose responses depend instead on slow gene expression
-       (:ref:`Kokaji et al. 2020 <ref-kokaji2020>`)
-     - not testable on this panel
-     - no enzyme-axis reactions; one 4 h time point and 19 genes, against the
-       paper's genome-wide time course. Tested in :doc:`liver_timecourse`.
-   * - Fasting ob/ob liver is rewired through enzyme amount rather than
-       metabolites (:ref:`Uematsu et al. 2022 <ref-uematsu2022>`)
-     - reproduced
-     - 90 % of regulated reactions change through enzymes, 37 % through
-       metabolites
-   * - ... and specifically through increased transcripts
-       (:ref:`Uematsu et al. 2022 <ref-uematsu2022>`)
-     - **not reproduced**
-     - 10 of 44 enzyme-axis reactions have a transcript changing the same way;
-       34 change at the protein level only
-   * - The pyruvate cycle is regulated through both transcripts and metabolites
-       (:ref:`Uematsu et al. 2022 <ref-uematsu2022>`)
-     - reproduced
-     - pyruvate kinase is regulated on both axes
-   * - ~54 % of regulated liver reactions are controversial in fasting ob/ob
-       mice (:ref:`Egami et al. 2021 <ref-egami2021>`)
-     - not testable on this panel
-     - 9 of 49 (18 %), from 2 enzymes; 19 central-carbon enzymes against 673
-       reactions genome-wide
-   * - Increased gluconeogenic flux arises primarily from increased transcripts
-       (:ref:`Uematsu et al. 2022 <ref-uematsu2022>`)
-     - out of scope
-     - a claim about *flux*, which TransNet does not model
+.. figure:: figures/obese_liver_panel/concordance.png
+   :width: 100%
 
-**4 of the 5 claims that this panel can test are reproduced.** The claim
-that is not reproduced, and the two that the panel cannot test, are both
-informative:
+   Protein change against transcript change for each gene measured in both
+   layers, coloured by category, with bootstrap 95 % intervals.
 
-* The claim that obesity acts through *transcripts* is contradicted without
-  depending on a significance cut-off. Tested directly (protein change minus
-  transcript change, with standard errors), Gpi1, Fbp1, Eno1 and Ldha changed
-  significantly more than their transcripts, while Pklr and Gpd1 changed through
-  their transcripts. Bootstrap 95 % intervals show the same:
+The three contrasts compared
+----------------------------
 
-  .. figure:: figures/obese_liver_panel/concordance.png
-     :width: 100%
-
-     Protein change against transcript change for each gene measured in both
-     layers, coloured by category.
-
-  Uematsu *et al.* reached "transcripts" through a flux model, which TransNet
-  does not have; the data here test the claim about enzyme *amounts*.
-* Two claims come from genome-wide studies with several time points. A 19-gene
-  panel at one time point cannot test them, so the verdict is "not testable on
-  this panel", not "wrong". :doc:`liver_timecourse` tests them on the
-  genome-wide data.
+The same analysis for all three contrasts: the glucose response of lean liver
+is carried by metabolites (6 reactions, all on the metabolite axis), nothing
+changes in the glucose response of obese liver, and fasting obese liver differs
+from lean liver mainly through enzyme amount (90 % of regulated reactions
+involve the enzyme axis, 37 % the metabolite axis).
 
 .. figure:: figures/obese_liver_panel/axes_by_contrast.png
    :width: 100%
 
-   Regulated reactions by axis in each of the three contrasts: lean liver's
-   glucose response relies on metabolites, fasting obese liver on enzyme amount.
+   Regulated reactions by axis in each of the three contrasts.
 
 Factors, and whether the pairing matters
 ----------------------------------------
@@ -351,6 +293,5 @@ molecules (q = 0.42 and 0.40).
 What this study does not cover
 ------------------------------
 
-Several claims in this literature concern metabolic *flux*, which needs a
-kinetic or flux model. TransNet does not build such models, so those claims are
-marked "out of scope" rather than tested.
+Questions about metabolic *flux*, such as how much glucose the liver
+produces, need a kinetic or flux model. TransNet does not build such models.

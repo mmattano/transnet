@@ -546,12 +546,10 @@ pd.DataFrame(ubiquitin_rows).set_index("tissue") if ubiquitin_rows else "no ubiq
 # weeks, not that degradation plays no part.
 
 # %% [markdown]
-# ## Acetylation and the mitochondrial claim
+# ## Acetylation in heart and liver
 #
-# The consortium reports increased mitochondrial biogenesis in muscle, heart
-# and liver. The activity of mitochondrial enzymes is regulated by acetylation,
-# which MoTrPAC measured in heart and liver, so the claim can be checked against
-# the modification and not only against protein amounts.
+# The activity of many mitochondrial enzymes is regulated by acetylation,
+# which MoTrPAC measured in heart and liver.
 
 # %%
 acetyl_rows = []
@@ -730,23 +728,10 @@ vulnerability_figure = plot_structural_vulnerability(
 plt.show()
 
 # %% [markdown]
-# ## Compared with the consortium's own analysis
+# ## Mitochondrial enzymes across tissues
 #
-# The *Nature* paper reports genome-wide patterns across tissues. The network
-# analysis agrees with three of them, and adds reaction-level detail that the
-# paper's pathway-level analysis does not reach.
-#
-# | MoTrPAC (Nature 2024) | Here |
-# |---|---|
-# | 58% of 8-week training-regulated features are sex-differentiated | sex is inseparable from the training response in every factor fitted below |
-# | 22 genes are training-regulated in all six tissues, heat shock prominent | the recurring cross-tissue hubs above |
-# | 67% of genes are tissue-specific | typed edge Jaccard between tissues, above |
-# | Increased mitochondrial biogenesis in muscle, heart and liver | checked directly below, at the level of individual reactions |
-#
-# The mitochondrial claim is the one worth testing in detail. In the paper,
-# "mitochondrial biogenesis" is a statement about enriched gene sets; the
-# network can say which TCA-cycle and oxidative-phosphorylation *enzymes*
-# changed, and in which direction.
+# For each tissue, how many TCA-cycle and oxidative-phosphorylation enzymes were
+# measured, and how many went up or down.
 
 # %%
 TCA_ENZYMES = ["Cs", "Aco2", "Idh2", "Idh3a", "Ogdh", "Sdha", "Sdhb", "Fh", "Mdh1", "Mdh2",
@@ -772,9 +757,8 @@ mitochondrial
 # %% [markdown]
 # ## Factors, read through the network
 #
-# The consortium found that most of the training response differs between the
-# sexes. Here this shows as factors that cannot separate training from sex:
-# every factor mixes the two.
+# Sex and training are hard to separate in this cohort: every factor mixes the
+# two.
 
 # %%
 from transnet.analysis.factors import (

@@ -11,8 +11,7 @@
 # published analysis are
 # [Anagho-Mattanovich *et al.*, *iScience* 28(9):113382, 2025](https://doi.org/10.1016/j.isci.2025.113382),
 # which compared five ways of integrating them. This notebook runs the whole
-# TransNet catalogue on the data and ends by comparing the results with what
-# that paper concluded.
+# TransNet catalogue on the data.
 #
 # Needs the mouse network: `python maintenance/build_networks.py --organisms
 # mouse --brenda`.
@@ -289,9 +288,7 @@ plt.show()
 #
 # For every gene measured as both transcript and protein,
 # `expression_concordance` asks whether the protein followed its transcript.
-# The paper's own example of the two diverging is cholesterol and lipid-droplet
-# synthesis: *Sqle* and *Fdft1* transcripts fall at 4 h while their proteins
-# rise. That corresponds to the `discordant` category here.
+# The table below shows a few genes of lipid metabolism and thermogenesis.
 
 # %%
 concordance = expression_concordance(graph)
@@ -662,10 +659,9 @@ plt.show()
 # %% [markdown]
 # ## Timing: three metabolic states
 #
-# The paper reports three states: uninduced (0 h), active lipolysis (4 h) and
-# sustained induction (24 h), with the metabolome changing first. Clustering the
-# metabolite time courses over all seven time points asks the same question of
-# the same data.
+# Do the metabolites follow a few distinct time courses? Clustering the
+# metabolite time courses over all seven time points groups metabolites that
+# change together.
 
 # %%
 metabolome = omics["Metabolome"]
@@ -751,20 +747,10 @@ motif_figure = plot_regulatory_motifs(motifs)
 plt.show()
 
 # %% [markdown]
-# ## Compared with the published analysis
+# ## Glycolysis enzymes
 #
-# | The paper concluded | Here |
-# |---|---|
-# | Three states: uninduced (0 h), active lipolysis (4 h), sustained (24 h) | the metabolite trajectories cluster into that many distinct shapes, above |
-# | The metabolome moves before the transcriptome and proteome | the responsive metabolites are already significant at 4 h while the protein changes concentrate at 24 h |
-# | Lipid-droplet genes (*Sqle*, *Fdft1*) fall as transcripts while their proteins rise | the same genes land in the `discordant` category of transcript-protein concordance, without being looked for |
-# | Upper glycolysis (*Pfkl*, *Pfkp*) down, lower glycolysis (*Pklr*) up | checked directly below |
-#
-# The paper reached its trans-omic observations, such as the Rock2/protamine
-# link and the split in glycolysis, by reading a network by hand. The table
-# shows that the same statements come out of the catalogue as ordinary output,
-# together with the regulation axis of each reaction and the
-# transcript-protein test.
+# The transcript and protein changes of the glycolysis enzymes measured in both
+# layers.
 
 # %%
 GLYCOLYSIS = ["Pfkl", "Pfkp", "Pfkm", "Pklr", "Pkm", "Hk1", "Hk2", "Gpi1", "Eno1"]

@@ -104,8 +104,7 @@ be read through the network with `transnet.analysis.factors`.
 
 ## Studies on published data
 
-Four studies run the whole catalogue on published data and compare the results
-with the authors' own conclusions. Each has a
+Four studies run the whole catalogue on published data. Each has a
 [summary page](https://mmattano.github.io/transnet/) and a notebook with every
 table and figure, and each reports what the analysis fails to show as plainly
 as what it shows.
@@ -114,7 +113,7 @@ as what it shows.
 |---|---|---|
 | [Brown adipocytes](docs/source/brown_adipocytes.rst) | mouse brown fat cells stimulated with norepinephrine; three layers, up to seven time points (Anagho-Mattanovich *et al.* 2025) | which reactions carry heat production, and through which mechanism |
 | [MoTrPAC](docs/source/motrpac_study.rst) | endurance training in six rat tissues, with phospho-, acetyl- and ubiquitin-proteomics (MoTrPAC 2024) | do tissues respond through the same mechanisms; how much lies in enzyme modification |
-| [Obese liver: metabolic panel](docs/source/obese_liver_panel.rst) | lean and obese mouse liver, fasted and after glucose; 19 enzymes (Uematsu *et al.* 2022) | are the published claims reproduced (4 of 5 testable) |
+| [Obese liver: metabolic panel](docs/source/obese_liver_panel.rst) | lean and obese mouse liver, fasted and after glucose; 19 enzymes (Uematsu *et al.* 2022) | which reactions change in obese liver, and through which mechanism |
 | [Obese liver: time course](docs/source/liver_timecourse.rst) | the same comparison genome-wide, over four hours (Kokaji *et al.* 2020) | how the two genotypes differ as networks over time |
 
 ## Layers are optional

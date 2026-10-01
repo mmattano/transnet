@@ -1,9 +1,9 @@
 # %% [markdown]
 # # Obese liver after a glucose load: a 19-gene metabolic panel
 #
-# **Question.** Does a trans-omic analysis answer questions that a separate
-# analysis of each layer cannot, and are its answers right? The data here
-# come with published conclusions, so both can be checked.
+# **Question.** Which reactions change in fasting obese liver, and through
+# which regulatory mechanism? What can a trans-omic analysis say about a small
+# targeted panel that separate lists of changed molecules cannot?
 #
 # **Data.** [Uematsu *et al.*, *iScience* 25(2):103787, 2022](https://doi.org/10.1016/j.isci.2022.103787)
 # measured the liver transcriptome, proteome and metabolome in the same mice:
@@ -11,11 +11,7 @@
 # after an oral glucose load. The panel covers central carbon metabolism: 19
 # enzyme genes, their proteins, and 32 metabolites.
 #
-# The data belong to the Kuroda laboratory's shared liver cohort, released with
-# their OMELET code under GPL-3.0. That is also why claims from Kokaji *et al.*
-# (*Sci. Signal.* 13:eaaz1236, 2020) can be checked on them. TransNet is
-# MIT-licensed, so the files are downloaded when the notebook runs and are never
-# committed to this repository.
+# The data files are downloaded when the notebook runs.
 
 # %%
 import matplotlib.pyplot as plt
@@ -128,9 +124,8 @@ print(f"  shared between transcript and protein lists: {len(shared)}")
 
 # %% [markdown]
 # That is all the separate lists can say. They cannot say which reactions are
-# affected, through which mechanism, or whether the layers agree. Those are the
-# questions the published paper asks, and the rest of this notebook answers them
-# on the network.
+# affected, through which mechanism, or whether the layers agree. The rest of
+# this notebook answers those questions on the network.
 #
 # ## Mapping the data onto the network
 
@@ -257,9 +252,9 @@ save(plot_metabolite_regulators(roles), "metabolite_regulators")
 # %% [markdown]
 # ### Are the protein changes transcriptional?
 #
-# The paper's central claim is that obese liver is rewired through the amount
-# of enzyme, and specifically through more *transcript*. For every gene
-# measured in both layers, `expression_concordance` asks whether the protein
+# Most enzyme-axis reactions change through the amount of enzyme. Is that
+# change transcriptional? For every gene measured in both layers,
+# `expression_concordance` asks whether the protein
 # followed its transcript. Because standard errors were mapped, it also tests
 # directly whether the protein changed *more* than its transcript, which does
 # not depend on where a significance cut-off falls.
@@ -489,53 +484,6 @@ for factor in robust_factors:
           .round(1).to_string(index=False))
 
 # %% [markdown]
-# ## The published claims, checked
-#
-# Each claim is set beside the number from this analysis that bears on it, and
-# given a verdict. Some claims come from genome-wide studies with several time
-# points; a 19-gene panel at one time point cannot test them, and the verdict
-# then says "not testable on this panel" rather than "wrong". The genome-wide
-# data are analysed in the liver time-course study.
-
-# %%
-enzyme_share = len(enzyme_only.index.union(both.index)) / max(len(regulated), 1)
-metabolite_share = len(metabolite_only.index.union(both.index)) / max(len(regulated), 1)
-transcript_supported = int((regulated["gene_axis_transcript_support"] == True).sum())  # noqa: E712
-enzyme_axis_total = len(enzyme_only) + len(both)
-
-claims = pd.DataFrame([
-    {"claim": "Healthy hepatic glucose responses rely on regulation by metabolites (Kokaji 2020)",
-     "evidence": "see the WT glucose contrast below", "verdict": "reproduced"},
-    {"claim": "In ob/ob liver, regulation by metabolites is lost (Kokaji 2020)",
-     "evidence": "no metabolite-axis reaction in the obese glucose response",
-     "verdict": "reproduced, weakly"},
-    {"claim": "ob/ob glucose responses depend instead on slow gene expression (Kokaji 2020)",
-     "evidence": "no enzyme-axis reaction either; one timepoint, 19 genes",
-     "verdict": "not testable on this panel"},
-    {"claim": "Fasting ob/ob liver is rewired through enzyme amount rather than metabolites (Uematsu 2022)",
-     "evidence": f"{enzyme_share:.0%} of regulated reactions via enzymes, "
-                 f"{metabolite_share:.0%} via metabolites",
-     "verdict": "reproduced" if enzyme_share >= 0.5 else "not reproduced"},
-    {"claim": "... and specifically through increased transcripts (Uematsu 2022)",
-     "evidence": f"{transcript_supported} of {enzyme_axis_total} enzyme-axis reactions have a "
-                 f"transcript moving the same way; "
-                 f"{concordance_counts.get('protein_beyond_transcript')} proteins moved "
-                 f"significantly further than their transcript",
-     "verdict": "not reproduced"},
-    {"claim": "The pyruvate cycle is regulated through both transcripts and metabolites (Uematsu 2022)",
-     "evidence": f"{len(both)} reactions carry both axes", "verdict": "reproduced"},
-    {"claim": "~54% of regulated liver reactions are controversial in fasting ob/ob (Egami 2021)",
-     "evidence": f"{int(regulated['controversial'].sum())} of {len(regulated)} "
-                 f"({regulated['controversial'].mean():.0%}); 19 central-carbon enzymes "
-                 f"against 673 genome-wide reactions",
-     "verdict": "not testable on this panel"},
-    {"claim": "Increased gluconeogenic flux arises primarily from increased transcripts (Uematsu 2022)",
-     "evidence": "a claim about flux, which TransNet does not model", "verdict": "out of scope"},
-])
-claims.to_csv(OUT / "published_claims.csv", index=False)
-claims
-
-# %% [markdown]
 # ## Two findings that no list of changed molecules contains
 
 # %%
@@ -594,8 +542,7 @@ composition
 
 # %% [markdown]
 # Healthy liver responds to glucose through its metabolites; fasted obese liver
-# is changed through the amount of its enzymes. This shift is the paper's main
-# finding, and it is reproduced here.
+# is changed through the amount of its enzymes.
 
 # %%
 save(plot_axis_composition(composition), "axes_by_contrast")

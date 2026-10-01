@@ -98,11 +98,10 @@ The four studies, and what each one shows:
   with phospho-, acetyl- and ubiquitin-proteomics; tissues compared on one
   network.
 * :doc:`obese_liver_panel`: lean and obese mouse liver after a glucose load,
-  measured on a 19-enzyme panel (Uematsu *et al.* 2022); published claims
-  checked one by one.
+  measured on a 19-enzyme panel (Uematsu *et al.* 2022); which reactions
+  change, and through which mechanism.
 * :doc:`liver_timecourse`: the same comparison genome-wide, over four hours
-  (Kokaji *et al.* 2020); two genotypes compared as networks, and inferences
-  checked against the authors' own.
+  (Kokaji *et al.* 2020); the two genotypes compared as networks over time.
 
 .. toctree::
    :maxdepth: 2

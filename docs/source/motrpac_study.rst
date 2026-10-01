@@ -389,15 +389,14 @@ in liver, this assay cannot account for several hundred proteins. The
 conclusion is that it does not explain the protein-only class at eight weeks,
 not that degradation plays no part.
 
-Acetylation, against the mitochondrial claim
---------------------------------------------
+Acetylation in heart and liver
+------------------------------
 
 Mitochondrial enzyme activity is regulated by acetylation, and heart and liver
 are the two tissues where it was measured. Liver changes 926 acetylation sites
 on 431 proteins, 593 up and 333 down; heart changes 221 sites on 134 proteins,
-116 up and 105 down. Neither is the one-directional increase a simple reading of
-"increased mitochondrial biogenesis" would predict, and the split is close to
-even in both.
+116 up and 105 down. In both tissues the changes go both ways, in roughly equal
+numbers.
 
 Timing, hubs and the comparison between tissues
 -----------------------------------------------
@@ -577,46 +576,19 @@ connects to the rest.
 .. figure:: figures/motrpac/structural_vulnerability_SKM_GN.png
    :width: 90%
 
-Compared with the consortium's own analysis
--------------------------------------------
+Mitochondrial enzymes across tissues
+------------------------------------
 
-The consortium's paper (:ref:`MoTrPAC Study Group 2024 <ref-motrpac2024>`)
-reports genome-wide patterns across tissues. The network analysis agrees with
-three of them and examines the fourth enzyme by enzyme.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 46 54
-
-   * - MoTrPAC 2024
-     - What the network reading shows
-   * - 58% of 8-week training-regulated features are sex-differentiated
-     - sex is inseparable from the training response here: every one of the
-       six gastrocnemius factors mixes timepoint with sex, three of them with
-       an interaction
-   * - 22 genes are training-regulated in all six tissues, with the heat-shock
-       response prominent
-     - the molecules that are cross-layer hubs in more than one tissue are led
-       by HSP90-alpha and HSPA1B
-   * - 67% of training-regulated genes are tissue-specific
-     - typed edge Jaccard between tissues is at most 0.33, and 30 molecules
-       respond in *opposite* directions in different tissues, which a shared
-       gene list reports as agreement
-   * - Increased mitochondrial biogenesis in skeletal muscle, heart and liver
-     - read enzyme by enzyme it holds in muscle and nowhere else: in
-       gastrocnemius 12 of 12 responsive TCA enzymes and 5 of 7 OXPHOS
-       subunits move *up*, while heart has 2 of 12 and liver 5 of 12. The
-       consortium's enrichment score and the reaction-level reading diverge
-
-In the paper, "mitochondrial biogenesis" is a statement about enriched gene
-sets. The network says which enzymes changed, and the two disagree for heart and
-liver.
+Enzyme by enzyme, the TCA cycle and oxidative phosphorylation respond mainly in
+trained muscle: in gastrocnemius 12 of 12 measured TCA-cycle enzymes and 5 of 7
+oxidative-phosphorylation subunits go up, against 2 of 12 TCA-cycle enzymes in
+heart and 5 of 12 in liver.
 
 .. figure:: figures/motrpac/cross_tissue_changes.png
    :width: 100%
 
-   The same molecules across tissues. The block structure is the tissue
-   specificity the consortium quantifies genome-wide.
+   The same molecules across tissues: each tissue responds with largely its own
+   set of molecules.
 
 Factors, read through the network
 ---------------------------------
@@ -688,9 +660,7 @@ What each reading adds:
   tightly connected module.
 * **The pairing verdict** separates factors carried by the design groups from
   those carried by differences between animals. Factor6 is almost entirely sex
-  (η² = 0.81): sex is the largest source of structure in this cohort, which
-  matches the consortium's finding that most of the training response differs
-  between the sexes.
+  (η² = 0.81): sex is the largest source of structure in this cohort.
 
 .. figure:: figures/motrpac/factor_overview.png
    :width: 100%
@@ -736,5 +706,5 @@ What does not work on this data
 .. seealso::
 
    :doc:`brown_adipocytes` runs the same catalogue on a mouse cell time course,
-   and :doc:`obese_liver_panel` and :doc:`liver_timecourse` check it against
-   published conclusions.
+   and :doc:`obese_liver_panel` and :doc:`liver_timecourse` apply it to lean and
+   obese mouse liver.
